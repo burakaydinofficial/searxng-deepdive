@@ -223,8 +223,20 @@ Within that boundary, two surfaces are worth knowing about:
   SearXNG is the trust boundary for upstream engine traffic; this
   package does not add additional rate-limiting or query rewriting.
 
-Report suspected vulnerabilities privately via [GitHub Security
-Advisories](https://github.com/burakaydinofficial/searxng-deepdive/security/advisories/new)
+- **Tool output is adversarial input — prompt injection is possible.**
+  Search-result snippets and the Markdown returned by `web_url_read`
+  both contain text the model will read as part of its working
+  context. A page or snippet you don't control can carry instructions
+  ("ignore previous instructions and …"). This isn't a defect in
+  this MCP server — it's inherent to any tool that returns external
+  text — but agent loops that auto-act on tool output without human
+  review are the threat model. Treat tool output as untrusted input,
+  especially for `web_url_read` against URLs the model picked rather
+  than the user.
+
+This package is provided **as-is under MIT** with no warranty or
+liability for damages — see [LICENSE](LICENSE). Report suspected
+vulnerabilities privately via [GitHub Security Advisories](https://github.com/burakaydinofficial/searxng-deepdive/security/advisories/new)
 rather than opening a public issue. See [SECURITY.md](SECURITY.md).
 
 ## License
