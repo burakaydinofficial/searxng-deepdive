@@ -23,7 +23,7 @@ always carry a hint specific enough that a retry has a real chance.
 
 ## Setup
 
-Node ≥20. From repo root:
+Node ≥22. From repo root:
 
 ```bash
 npm install
@@ -74,7 +74,7 @@ scripts/
 └── probe.ts          # dev-time SearxngClient exerciser (not in published bundle)
 
 .github/workflows/
-├── test.yml          # push/PR/dispatch — Node 20/22/24 × {ubuntu,macos,windows} matrix
+├── test.yml          # push/PR/dispatch — Node 22/24 × {ubuntu,macos,windows} matrix
 └── publish.yml       # tags v*.*.* — verifies version, runs tests, npm publish
 ```
 

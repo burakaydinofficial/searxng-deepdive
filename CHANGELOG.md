@@ -21,10 +21,12 @@ versioning is [Semantic Versioning](https://semver.org/).
   model and the URL-fetch surface inherent to `web_url_read`.
 
 ### Changed
-- **BREAKING:** `engines.node` is now `>=20` (was `>=18`). Node 18
-  reached EOL on 2025-04-30; continuing to advertise it as supported
-  was misleading and blocked needed dep updates.
-- CI test matrix is now `[ubuntu, macos, windows] × Node [20, 22, 24]`
+- **BREAKING:** `engines.node` is now `>=22` (was `>=18`). Node 18
+  reached EOL on 2025-04-30, and the dependency line we want — undici 8
+  (`>=22.19.0`) and vite 8 (`^20.19 || >=22.12`) via vitest 4 — has
+  moved decisively past Node 20. Pinning to Node 22 (current Active LTS
+  in May 2026) is the honest match for the deps we ship.
+- CI test matrix is now `[ubuntu, macos, windows] × Node [22, 24]`
   (was Linux-only Node 18/20/22). Cross-OS coverage proves the package
   installs and runs everywhere it claims to before publish.
 - README "Tests" badge swapped from a static "102 passing" shield to
