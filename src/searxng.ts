@@ -6,6 +6,14 @@
 
 import { request } from "undici";
 
+// Trim a response body for inclusion in an error message. Caps at ~200
+// chars and squashes whitespace runs so an HTML 502 page doesn't dump
+// hundreds of useless tags into the error.
+function snippetOf(text: string, max = 200): string {
+  const compact = text.replace(/\s+/g, " ").trim();
+  return compact.length > max ? `${compact.slice(0, max)}…` : compact;
+}
+
 export type TimeRange = "day" | "week" | "month" | "year";
 export type SafeSearch = 0 | 1 | 2;
 
@@ -68,11 +76,29 @@ export class SearxngClient {
   }
 
   async getConfig(): Promise<SearxngConfig> {
-    const { body, statusCode } = await request(`${this.baseUrl}/config`);
+    const { body, statusCode } = await request(`${this.baseUrl}/config`, {
+      headersTimeout: 10_000,
+      bodyTimeout: 15_000,
+    });
+
+    // Read as text first so we can fall back gracefully if SearXNG returns
+    // HTML (e.g. Cloudflare 502 page) or some other non-JSON body. Without
+    // this, JSON.parse throws a bare SyntaxError that gives the caller no
+    // useful diagnostic.
+    const text = await body.text();
     if (statusCode >= 400) {
-      throw new Error(`SearXNG /config returned HTTP ${statusCode}`);
+      throw new Error(
+        `SearXNG /config returned HTTP ${statusCode}: ${snippetOf(text)}`,
+      );
     }
-    const config = (await body.json()) as ConfigResponse;
+    let config: ConfigResponse;
+    try {
+      config = JSON.parse(text) as ConfigResponse;
+    } catch {
+      throw new Error(
+        `SearXNG /config returned non-JSON (HTTP ${statusCode}): ${snippetOf(text)}`,
+      );
+    }
 
     const enabledEngines: string[] = [];
     const categorySet = new Set<string>();
@@ -126,10 +152,24 @@ export class SearxngClient {
       headersTimeout: 30_000,
       bodyTimeout: 60_000,
     });
+
+    const text = await body.text();
     if (statusCode >= 400) {
-      throw new Error(`SearXNG /search returned HTTP ${statusCode}`);
+      const rateLimited =
+        statusCode === 429
+          ? " — instance is rate-limiting; reduce pages, wait, or target fewer engines"
+          : "";
+      throw new Error(
+        `SearXNG /search returned HTTP ${statusCode}${rateLimited}: ${snippetOf(text)}`,
+      );
     }
-    return (await body.json()) as SearchResponse;
+    try {
+      return JSON.parse(text) as SearchResponse;
+    } catch {
+      throw new Error(
+        `SearXNG /search returned non-JSON (HTTP ${statusCode}): ${snippetOf(text)}`,
+      );
+    }
   }
 
   // Fan out N consecutive pages, merge with URL-based dedup. Errors on
