@@ -31,6 +31,21 @@
     "tools"
   ],
   "license": "MIT",
+  "author": {
+    "name": "Burak Aydın"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/burakaydinofficial/SearXNG-Compose.git",
+    "directory": "mcp-server"
+  },
+  "bugs": {
+    "url": "https://github.com/burakaydinofficial/SearXNG-Compose/issues"
+  },
+  "homepage": "https://github.com/burakaydinofficial/SearXNG-Compose/tree/main/mcp-server#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
     "node-html-markdown": "^2.0.0",

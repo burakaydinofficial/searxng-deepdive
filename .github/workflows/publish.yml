@@ -1,0 +1,62 @@
+# Publishes to npm when a git tag matching `v*.*.*` is pushed.
+#
+# Setup required (one-time, in GitHub repo settings):
+#   1. Generate an npm access token (https://www.npmjs.com/settings/<user>/tokens)
+#      with publish permission. Use a granular token scoped to this package.
+#   2. Add it as a repository secret named NPM_TOKEN
+#      (Settings → Secrets and variables → Actions → New repository secret).
+#
+# Release process:
+#   1. bump `version` in package.json
+#   2. commit + push to main, wait for CI green
+#   3. git tag v0.2.1 && git push origin v0.2.1
+#   4. this workflow runs and publishes to npm
+#
+# The workflow re-runs the full test suite before publishing — a tag with
+# failing tests will not ship.
+
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify version matches tag
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "package.json version ($PKG_VERSION) does not match tag ($TAG_VERSION)"
+            exit 1
+          fi
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Publish
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
