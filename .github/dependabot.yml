@@ -1,0 +1,25 @@
+# Keep npm + GitHub Actions dependencies fresh. PRs land in main; the
+# test workflow gates them, and the publish workflow only fires on tags
+# so dependabot can't accidentally cut a release.
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    groups:
+      # Group dev-dep churn so we don't drown in bot noise.
+      dev-dependencies:
+        dependency-type: development
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - github-actions
