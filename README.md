@@ -1,6 +1,6 @@
 # searxng-deepdive
 
-[![Tests](https://img.shields.io/badge/tests-102%20passing-brightgreen)](#testing)
+[![Tests](https://github.com/burakaydinofficial/searxng-deepdive/actions/workflows/test.yml/badge.svg)](https://github.com/burakaydinofficial/searxng-deepdive/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 An [MCP](https://modelcontextprotocol.io/) server for [SearXNG](https://docs.searxng.org/)
@@ -196,6 +196,36 @@ Test coverage spans seven files:
   zero-result-hint pattern surfaces the actual cause every time. The
   description-anti-pattern test suite locks in copy that was empirically
   shown to mislead models.
+
+## Security notes
+
+This package is designed to run **locally**, inside the user's trust
+boundary, alongside an MCP-speaking LLM client (Claude Desktop, LM Studio,
+Cursor, etc.). The trust model assumes:
+
+- the LLM is acting on the user's behalf
+- the user controls what model is connected to the server
+- the MCP transport is stdio, not exposed to remote callers
+
+Within that boundary, two surfaces are worth knowing about:
+
+- **`web_url_read` will fetch any HTTP(S) URL the model hands it**, with
+  up to five redirects. On a host that can route to private networks,
+  the model can therefore reach intranet services, link-local addresses,
+  or cloud-instance metadata endpoints (`169.254.169.254`, etc.). This
+  is by design for a local research tool but means you should not run
+  this MCP server in topologies where an untrusted party can pick the
+  URLs (e.g. a hosted MCP gateway facing the public internet).
+  Body size is capped at 10 MB and content-type is sniffed before
+  conversion, so a malformed upstream can't trivially OOM the process.
+
+- **The `search` tools forward the model's query verbatim to SearXNG.**
+  SearXNG is the trust boundary for upstream engine traffic; this
+  package does not add additional rate-limiting or query rewriting.
+
+Report suspected vulnerabilities privately via [GitHub Security
+Advisories](https://github.com/burakaydinofficial/searxng-deepdive/security/advisories/new)
+rather than opening a public issue. See [SECURITY.md](SECURITY.md).
 
 ## License
 

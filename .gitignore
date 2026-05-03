@@ -3,3 +3,8 @@ dist/
 *.log
 .env
 .env.local
+
+# Per-contributor agent / IDE config, not project-wide rules
+.claude/
+.cursor/
+.aider*

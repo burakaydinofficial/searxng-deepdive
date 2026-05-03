@@ -211,10 +211,11 @@ for too long. It's much faster to:
 4. Confirm test passes
 5. Push and let the user verify in LM Studio at their convenience
 
-The audit done in this project's history (a code-review-analyzer agent
-that surveyed the whole codebase systematically) is the recommended
-pattern when reactive fixes start piling up. See the SearXNG-Compose
-repo's `docs/superpowers/ledger/` for that history.
+When reactive fixes start piling up, stop and do a one-shot codebase
+audit (a code-review-analyzer agent walking every file is the pattern
+that's worked here) rather than continuing to tack one-line fixes onto
+each new failure. The `CHANGELOG.md` 0.2.0 entry summarizes the most
+recent such audit's outputs.
 
 ---
 
