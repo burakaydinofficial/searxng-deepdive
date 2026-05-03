@@ -128,28 +128,39 @@ function trimToCompact(
   return out;
 }
 
+// Normalize engine/category names so case-mismatched input from the model
+// (e.g. "arXiv", "Semantic Scholar", "PubMed") matches our lowercase config.
+// SearXNG itself is case-sensitive on these names; passing wrong case there
+// silently no-ops. Cheap to be tolerant.
+function normalizeName(s: string): string {
+  return s.trim().toLowerCase();
+}
+
 // Cross-validate engine/category names against the live config. The most
-// common LLM mistake we've seen is passing engine names where categories
-// belong (e.g. categories=["arxiv","pubmed"]). Without validation, SearXNG
-// silently ignores unknown values and falls back to defaults — the model
-// sees "60 results" and assumes success even though the search ran on the
-// wrong engines. This converts that into a loud error with a "did you
-// mean" hint.
+// common LLM mistakes we've seen:
+//   1. passing engine names where categories belong (e.g.
+//      categories=["arxiv","pubmed"]) — caught by the cross-reference hint;
+//   2. passing names in the wrong case ("arXiv", "PubMed") — caught by
+//      lowercasing both sides of the comparison.
+// Without validation, SearXNG silently ignores unknown values and falls back
+// to defaults — the model sees "60 results" and assumes success even though
+// the search ran on the wrong engines.
 function validateEngineSelection(
   engines: string[],
   config: SearxngConfig,
 ): void {
-  const invalid = engines.filter((e) => !config.enabledEngines.includes(e));
+  const enabledLower = new Set(config.enabledEngines.map(normalizeName));
+  const categoriesLower = new Set(config.enabledCategories.map(normalizeName));
+
+  const invalid = engines.filter((e) => !enabledLower.has(normalizeName(e)));
   if (invalid.length === 0) return;
 
   const matchedCategories = invalid.filter((e) =>
-    config.enabledCategories.includes(e),
+    categoriesLower.has(normalizeName(e)),
   );
   const hint =
     matchedCategories.length > 0
-      ? ` ${matchedCategories.length === 1 ? "Note" : "Note"}: ${matchedCategories
-          .map((c) => `"${c}"`)
-          .join(", ")} ${matchedCategories.length === 1 ? "is a category" : "are categories"}, not engines. Use the \`search_by_category\` tool with those.`
+      ? ` Note: ${matchedCategories.map((c) => `"${c}"`).join(", ")} ${matchedCategories.length === 1 ? "is a category" : "are categories"}, not engines. Use the \`search_by_category\` tool for those.`
       : "";
 
   const enginePreview = config.enabledEngines.slice(0, 25).join(", ");
@@ -167,19 +178,20 @@ function validateCategorySelection(
   categories: string[],
   config: SearxngConfig,
 ): void {
+  const enabledLower = new Set(config.enabledEngines.map(normalizeName));
+  const categoriesLower = new Set(config.enabledCategories.map(normalizeName));
+
   const invalid = categories.filter(
-    (c) => !config.enabledCategories.includes(c),
+    (c) => !categoriesLower.has(normalizeName(c)),
   );
   if (invalid.length === 0) return;
 
   const matchedEngines = invalid.filter((c) =>
-    config.enabledEngines.includes(c),
+    enabledLower.has(normalizeName(c)),
   );
   const hint =
     matchedEngines.length > 0
-      ? ` ${matchedEngines.length === 1 ? "Note" : "Note"}: ${matchedEngines
-          .map((e) => `"${e}"`)
-          .join(", ")} ${matchedEngines.length === 1 ? "is an engine" : "are engines"}, not categories. Use the \`search_on_engines\` tool with those.`
+      ? ` Note: ${matchedEngines.map((e) => `"${e}"`).join(", ")} ${matchedEngines.length === 1 ? "is an engine" : "are engines"}, not categories. Use the \`search_on_engines\` tool for those.`
       : "";
 
   throw new Error(
@@ -205,19 +217,26 @@ async function doSearch(
   if (input.engines?.length) validateEngineSelection(input.engines, config);
   if (input.categories?.length) validateCategorySelection(input.categories, config);
 
+  // Normalize for the actual SearXNG call. SearXNG is case-sensitive on
+  // engine/category names; passing wrong case there silently no-ops.
+  // Validation already ensured these all map to real entries, so lowercasing
+  // is safe and idempotent.
+  const normalizedEngines = input.engines?.map(normalizeName);
+  const normalizedCategories = input.categories?.map(normalizeName);
+
   const pages = input.pages ?? 1;
   const format = input.format ?? "compact";
   const ctx: ZeroResultContext = {
     time_range: input.time_range,
-    engines: input.engines,
-    categories: input.categories,
+    engines: normalizedEngines,
+    categories: normalizedCategories,
   };
 
   if (pages > 1) {
     const resp = await client.searchMultiPage({
       query: input.query,
-      engines: input.engines,
-      categories: input.categories,
+      engines: normalizedEngines,
+      categories: normalizedCategories,
       pageno: input.pageno ?? 1,
       pages,
       time_range: input.time_range,
@@ -233,8 +252,8 @@ async function doSearch(
 
   const resp = await client.search({
     query: input.query,
-    engines: input.engines,
-    categories: input.categories,
+    engines: normalizedEngines,
+    categories: normalizedCategories,
     pageno: input.pageno,
     time_range: input.time_range,
     language: input.language,
