@@ -49,13 +49,69 @@ interface CompactResponse {
   pages_fetched: number;
   unresponsive_engines: unknown[];
   results: CompactResult[];
+  hint?: string;
+}
+
+interface ZeroResultContext {
+  time_range?: string;
+  engines?: string[];
+  categories?: string[];
+}
+
+// When a search returns zero results, the model needs a signal about why.
+// SearXNG-reported `unresponsive_engines` covers some cases (rate-limiting,
+// CAPTCHA), but others fail silently — most notably engines that don't
+// implement time_range filtering (arxiv, pubmed, semantic scholar) which
+// return empty when the filter is set instead of ignoring it. This builder
+// inspects the response + the original parameters and emits a one-line
+// hint the model can self-correct from.
+function buildZeroResultHint(
+  resp: SearchResponse,
+  ctx: ZeroResultContext,
+): string | undefined {
+  if (resp.results.length > 0) return undefined;
+
+  const hints: string[] = [];
+
+  if (ctx.time_range) {
+    hints.push(
+      `time_range="${ctx.time_range}" was set. Some engines (notably academic — arxiv, pubmed, semantic scholar — and several wikimedia engines) do not implement time-range filtering and return empty when it's specified. Try the same query without time_range.`,
+    );
+  }
+
+  const unresponsiveCount = Array.isArray(resp.unresponsive_engines)
+    ? resp.unresponsive_engines.length
+    : 0;
+
+  if (
+    unresponsiveCount > 0 &&
+    ctx.engines &&
+    ctx.engines.length > 0 &&
+    unresponsiveCount >= ctx.engines.length
+  ) {
+    hints.push(
+      `All ${ctx.engines.length} requested engines were unresponsive (rate-limited or blocked at upstream).`,
+    );
+  } else if (
+    !ctx.time_range &&
+    ctx.engines &&
+    ctx.engines.length === 1 &&
+    unresponsiveCount === 0
+  ) {
+    hints.push(
+      `Only one engine ("${ctx.engines[0]}") was queried and returned nothing. Try the broad \`search\` tool, or list additional engines, for more coverage.`,
+    );
+  }
+
+  return hints.length > 0 ? hints.join(" ") : undefined;
 }
 
 function trimToCompact(
   resp: SearchResponse,
   pagesFetched: number,
+  ctx: ZeroResultContext,
 ): CompactResponse {
-  return {
+  const out: CompactResponse = {
     query: resp.query,
     result_count: resp.results.length,
     pages_fetched: pagesFetched,
@@ -67,6 +123,9 @@ function trimToCompact(
       engine: r.engine,
     })),
   };
+  const hint = buildZeroResultHint(resp, ctx);
+  if (hint) out.hint = hint;
+  return out;
 }
 
 // Cross-validate engine/category names against the live config. The most
@@ -148,6 +207,11 @@ async function doSearch(
 
   const pages = input.pages ?? 1;
   const format = input.format ?? "compact";
+  const ctx: ZeroResultContext = {
+    time_range: input.time_range,
+    engines: input.engines,
+    categories: input.categories,
+  };
 
   if (pages > 1) {
     const resp = await client.searchMultiPage({
@@ -160,7 +224,11 @@ async function doSearch(
       language: input.language,
       safe_search: input.safe_search,
     });
-    return format === "full" ? resp : trimToCompact(resp, resp.pages_fetched);
+    if (format === "full") {
+      const hint = buildZeroResultHint(resp, ctx);
+      return hint ? { ...resp, hint } : resp;
+    }
+    return trimToCompact(resp, resp.pages_fetched, ctx);
   }
 
   const resp = await client.search({
@@ -172,7 +240,11 @@ async function doSearch(
     language: input.language,
     safe_search: input.safe_search,
   });
-  return format === "full" ? resp : trimToCompact(resp, 1);
+  if (format === "full") {
+    const hint = buildZeroResultHint(resp, ctx);
+    return hint ? { ...resp, hint } : resp;
+  }
+  return trimToCompact(resp, 1, ctx);
 }
 
 export async function registerTools(
