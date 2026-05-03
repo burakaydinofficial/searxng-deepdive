@@ -75,7 +75,7 @@ function buildZeroResultHint(
 
   if (ctx.time_range) {
     hints.push(
-      `time_range="${ctx.time_range}" was set. Some engines (notably academic — arxiv, pubmed, semantic scholar — and several wikimedia engines) do not implement time-range filtering and return empty when it's specified. Try the same query without time_range.`,
+      `time_range="${ctx.time_range}" was set. Not all engines implement time-range filtering — some return empty when it is specified instead of ignoring it. If you actually need recency, try the same query without time_range first to confirm there are matching results, then narrow down.`,
     );
   }
 
