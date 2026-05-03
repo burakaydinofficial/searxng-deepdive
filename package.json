@@ -1,6 +1,6 @@
 {
   "name": "searxng-deepdive",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MCP server for SearXNG with engine/category targeting, multi-page fanout, and dynamically-generated tool descriptions tailored to the instance's actual enabled engine pool.",
   "type": "module",
   "main": "dist/index.js",

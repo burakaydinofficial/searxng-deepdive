@@ -6,6 +6,8 @@ versioning is [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-05-03
+
 ### Added
 - `AGENTS.md` — agent-readable working-conventions guide.
 - `SECURITY.md` — vulnerability-reporting policy with an in-scope /
