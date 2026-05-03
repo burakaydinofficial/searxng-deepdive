@@ -22,15 +22,19 @@ import {
   SearchInput,
   SearchOnEnginesInput,
   SearchByCategoryInput,
+  WebUrlReadInput,
   type SearchInputT,
   type SearchOnEnginesInputT,
   type SearchByCategoryInputT,
+  type WebUrlReadInputT,
 } from "./schemas.js";
 import {
   searchDescription,
   searchOnEnginesDescription,
   searchByCategoryDescription,
+  webUrlReadDescription,
 } from "./descriptions.js";
+import { fetchAndConvertToMarkdown } from "./url-reader.js";
 
 interface ToolDef<T> {
   name: string;
@@ -322,6 +326,16 @@ export async function registerTools(
         const i = input as SearchByCategoryInputT;
         return doSearch(client, config, { ...i, categories: i.categories });
       },
+    },
+    {
+      name: "web_url_read",
+      description: webUrlReadDescription(),
+      inputSchema: zodToJsonSchema(WebUrlReadInput),
+      zodSchema: WebUrlReadInput as ZodType<unknown>,
+      handler: (input) => fetchAndConvertToMarkdown(
+        (input as WebUrlReadInputT).url,
+        input as WebUrlReadInputT,
+      ),
     },
   ];
 

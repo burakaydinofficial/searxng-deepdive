@@ -112,3 +112,56 @@ export const SearchByCategoryInput = z.object({
 export type SearchInputT = z.infer<typeof SearchInput>;
 export type SearchOnEnginesInputT = z.infer<typeof SearchOnEnginesInput>;
 export type SearchByCategoryInputT = z.infer<typeof SearchByCategoryInput>;
+
+// ============================================================================
+// web_url_read input
+// ============================================================================
+export const WebUrlReadInput = z.object({
+  url: z
+    .string()
+    .url()
+    .refine(
+      (u) => u.startsWith("http://") || u.startsWith("https://"),
+      "URL must use http or https scheme",
+    )
+    .describe(
+      "HTTP(S) URL to fetch and convert to Markdown. Static pages only — for JavaScript-rendered SPAs and bot-protected sites, use a Chromium-backed reader instead.",
+    ),
+  readHeadings: z
+    .boolean()
+    .optional()
+    .describe(
+      "When true, returns ONLY the page's heading list as a hierarchical TOC (token-cheap survey). Pair with a follow-up call using `section` to read the chunk you actually want.",
+    ),
+  section: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .describe(
+      "Substring match against headings (case-insensitive). Returns content under the FIRST heading containing this text, up to the next heading at the same or higher level. Use after readHeadings to read a targeted section without dumping the whole page.",
+    ),
+  paragraphRange: z
+    .string()
+    .regex(/^\d+(-\d+)?$/, "Use 'N' or 'N-M' format, e.g. '5' or '3-7'")
+    .optional()
+    .describe(
+      "1-indexed paragraph range, syntax 'N' or 'N-M' (e.g. '3-7' for paragraphs 3–7, '5' for paragraph 5 alone). Useful for sequential reading of long pages without re-fetching.",
+    ),
+  startChar: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe("Character offset where extraction begins. Default 0."),
+  maxLength: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe(
+      "Maximum characters to return. Use with startChar for paginated reading; the response includes `total_length` and `truncated` so you can plan follow-up calls.",
+    ),
+});
+
+export type WebUrlReadInputT = z.infer<typeof WebUrlReadInput>;
