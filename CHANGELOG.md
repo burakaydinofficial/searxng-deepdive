@@ -6,6 +6,15 @@ versioning is [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-05-03
+
+### Changed
+- Publish workflow now uses npm Trusted Publishing (OIDC) instead of
+  a long-lived `NPM_TOKEN` secret. Maintainer/CI hardening only —
+  the published tarball contents are byte-identical to 0.3.0 (no
+  source or runtime change). This release exists so the OIDC
+  handshake gets exercised end-to-end before a real-content release.
+
 ## [0.3.0] — 2026-05-03
 
 ### Added
