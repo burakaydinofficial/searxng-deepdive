@@ -21,12 +21,13 @@ versioning is [Semantic Versioning](https://semver.org/).
   model and the URL-fetch surface inherent to `web_url_read`.
 
 ### Changed
-- **BREAKING:** `engines.node` is now `>=22` (was `>=18`). Node 18
-  reached EOL on 2025-04-30, and the dependency line we want — undici 8
-  (`>=22.19.0`) and vite 8 (`^20.19 || >=22.12`) via vitest 4 — has
-  moved decisively past Node 20. Pinning to Node 22 (current Active LTS
-  in May 2026) is the honest match for the deps we ship.
-- CI test matrix is now `[ubuntu, macos, windows] × Node [22, 24]`
+- **BREAKING:** `engines.node` is now `>=20.18.1` (was `>=18`). Node 18
+  reached EOL on 2025-04-30 and was no longer defensible to advertise.
+  We pinned `>=20.18.1` rather than the more aspirational `>=22` because
+  Node 20 is still in maintenance LTS through April 2027 with a real
+  user base, and undici 7 (the line we ship) supports it. The trailing
+  `.18.1` matches undici 7's own engines floor exactly.
+- CI test matrix is now `[ubuntu, macos, windows] × Node [20, 22, 24]`
   (was Linux-only Node 18/20/22). Cross-OS coverage proves the package
   installs and runs everywhere it claims to before publish.
 - README "Tests" badge swapped from a static "102 passing" shield to
@@ -53,8 +54,11 @@ versioning is [Semantic Versioning](https://semver.org/).
 - `zod` ^3 → ^4 (renames `ZodError.errors` → `.issues`; per-issue
   shape is unchanged so internal `er.path.join(".")` and `er.message`
   callers still work).
-- `undici` ^6 → ^8 (redirect handling moved from request option to
-  composable interceptor on the dispatcher).
+- `undici` ^6 → ^7 (redirect handling moved from request option to
+  composable interceptor on the dispatcher). Stayed on v7 rather than
+  v8 because v8 requires Node 22.19+ and the only v8 feature we'd
+  pick up is HTTP/2-by-default, which v7 also supports as opt-in;
+  v7 still receives parallel security backports.
 - `@modelcontextprotocol/sdk` ^1.0.4 → ^1.29 (security + protocol
   fixes; no public API used by this package changed).
 - `vitest` ^2 → ^4 (transitively clears the esbuild/vite dev-server
