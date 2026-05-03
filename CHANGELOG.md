@@ -7,8 +7,59 @@ versioning is [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- `AGENTS.md` — guide for AI assistants editing the codebase
-- `CHANGELOG.md` (this file)
+- `AGENTS.md` — agent-readable working-conventions guide.
+- `SECURITY.md` — vulnerability-reporting policy with an in-scope /
+  out-of-scope list (so the SSRF-by-design behavior of `web_url_read`
+  isn't reported as a bug).
+- `CONTRIBUTING.md` — quick-start for human contributors; defers to
+  `AGENTS.md` for working conventions to avoid two-source drift.
+- `.github/dependabot.yml` — weekly grouped dep updates for npm and
+  GitHub Actions ecosystems.
+- `src/version.ts` — single source of truth for the package version,
+  read from `package.json` at module load.
+- README "Security notes" section documenting the local-first trust
+  model and the URL-fetch surface inherent to `web_url_read`.
+
+### Changed
+- **BREAKING:** `engines.node` is now `>=20` (was `>=18`). Node 18
+  reached EOL on 2025-04-30; continuing to advertise it as supported
+  was misleading and blocked needed dep updates.
+- CI test matrix is now `[ubuntu, macos, windows] × Node [20, 22, 24]`
+  (was Linux-only Node 18/20/22). Cross-OS coverage proves the package
+  installs and runs everywhere it claims to before publish.
+- README "Tests" badge swapped from a static "102 passing" shield to
+  the live workflow status badge so it stops drifting on every test add.
+- The MCP handshake now reports the actual package version. Previously
+  hardcoded as `"0.1.0"` even after `package.json` was at `0.2.0`.
+- url-reader's outbound user-agent now uses the live package version.
+  Previously hardcoded as `"searxng-deepdive/0.2"`.
+- `registerTools(server, client, config)` now takes the SearxngConfig
+  rather than re-fetching `/config` itself. The startup probe in
+  `index.ts` already had it; passing it through removes a redundant
+  round-trip and the tiny window where the two reads could disagree.
+- `web_url_read` body reads are now capped at 10 MB and consumed via
+  a stream-with-cap helper, so an upstream advertising `text/html`
+  but shipping a multi-GB asset can't OOM the process. Catches
+  Content-Length lies that a post-hoc length check would miss.
+
+### Removed
+- `zod-to-json-schema` dependency. Zod 4 ships `z.toJSONSchema()`
+  natively — one fewer transitive supply-chain hop, recommended by
+  the upstream maintainer (deprecated in late 2025).
+
+### Dependencies
+- `zod` ^3 → ^4 (renames `ZodError.errors` → `.issues`; per-issue
+  shape is unchanged so internal `er.path.join(".")` and `er.message`
+  callers still work).
+- `undici` ^6 → ^8 (redirect handling moved from request option to
+  composable interceptor on the dispatcher).
+- `@modelcontextprotocol/sdk` ^1.0.4 → ^1.29 (security + protocol
+  fixes; no public API used by this package changed).
+- `vitest` ^2 → ^4 (transitively clears the esbuild/vite dev-server
+  advisories from the previous audit; full suite now ~1s).
+- `@types/node` ^20 → ^22 (newer Node typings).
+
+`npm audit` now reports 0 vulnerabilities.
 
 ## [0.2.0] — 2026-05-03
 
