@@ -1,0 +1,26 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.burakaydinofficial/searxng-deepdive",
+  "description": "MCP server for SearXNG with engine/category targeting, multi-page fanout, lightweight URL→Markdown reading, and tool descriptions generated dynamically from the live engine pool of the connected SearXNG instance.",
+  "repository": {
+    "url": "https://github.com/burakaydinofficial/searxng-deepdive",
+    "source": "github"
+  },
+  "version": "0.3.2",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "searxng-deepdive",
+      "version": "0.3.2",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "SEARXNG_URL",
+          "description": "Base URL of the SearXNG instance (e.g. http://127.0.0.1:7979/). Defaults to http://127.0.0.1:8080 if unset; set this to the address of your running SearXNG.",
+          "isRequired": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

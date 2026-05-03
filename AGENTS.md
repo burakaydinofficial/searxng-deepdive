@@ -58,8 +58,11 @@ src/
 │                     #   validateEngineSelection, validateCategorySelection,
 │                     #   buildZeroResultHint, trimToCompact for tests.
 └── url-reader.ts     # web_url_read implementation: undici fetch +
-                      #   node-html-markdown + extraction modes
-                      #   (readHeadings, section, paragraphRange, window)
+                      #   content-type-aware conversion (HTML/XML →
+                      #   node-html-markdown; JSON → pretty-printed code
+                      #   fence; plaintext → passthrough) + extraction
+                      #   modes (readHeadings, section, paragraphRange,
+                      #   window) + 10 MB stream-cap on the body
 
 tests/
 ├── normalize-name.test.ts        # case/whitespace normalization

@@ -323,6 +323,57 @@ describe("fetchAndConvertToMarkdown", () => {
     expect(r.mode).toBe("readHeadings");
   });
 
+  it("returns JSON content-type as a pretty-printed fenced code block", async () => {
+    pool()
+      .intercept({ path: "/api" })
+      .reply(200, '{"hello":"world","items":[1,2,3]}', {
+        headers: { "content-type": "application/json" },
+      });
+
+    const r = await fetchAndConvertToMarkdown(`${ORIGIN}/api`);
+    expect(r.mode).toBe("full");
+    expect(r.markdown).toContain("```json");
+    expect(r.markdown).toContain('"hello": "world"'); // pretty-printed key/value spacing
+    expect(r.markdown).toContain('  "items"'); // 2-space indent
+    expect(r.markdown.endsWith("```")).toBe(true);
+  });
+
+  it("accepts JSON content-type variants (application/ld+json, vnd.*+json)", async () => {
+    pool()
+      .intercept({ path: "/ld" })
+      .reply(200, '{"@context":"https://schema.org"}', {
+        headers: { "content-type": "application/ld+json" },
+      });
+
+    const r = await fetchAndConvertToMarkdown(`${ORIGIN}/ld`);
+    expect(r.markdown).toContain("```json");
+    expect(r.markdown).toContain('"@context"');
+  });
+
+  it("falls through to raw body when content-type lies about being JSON", async () => {
+    pool()
+      .intercept({ path: "/bogus" })
+      .reply(200, "{not valid json}", {
+        headers: { "content-type": "application/json" },
+      });
+
+    const r = await fetchAndConvertToMarkdown(`${ORIGIN}/bogus`);
+    expect(r.markdown).toBe("{not valid json}"); // no crash, no code fence
+  });
+
+  it("passes plaintext through verbatim without HTML-entity decoding", async () => {
+    pool()
+      .intercept({ path: "/text" })
+      .reply(200, "Hello & welcome <user>", {
+        headers: { "content-type": "text/plain" },
+      });
+
+    const r = await fetchAndConvertToMarkdown(`${ORIGIN}/text`);
+    // & and < survive — running this through node-html-markdown would
+    // have decoded "&" as an entity and dropped or escaped "<user>".
+    expect(r.markdown).toBe("Hello & welcome <user>");
+  });
+
   it("accepts redirects up to 5 hops", async () => {
     // Just verify maxRedirections is set; intercepting the redirect chain
     // in MockAgent is awkward, so we just confirm the basic GET still works.

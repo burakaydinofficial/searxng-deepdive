@@ -6,6 +6,32 @@ versioning is [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-05-03
+
+### Added
+- `web_url_read` now accepts `application/json` and JSON variants
+  (`application/ld+json`, `application/vnd.*+json`, etc.) as textual
+  content. JSON bodies pass through pretty-printed inside a fenced code
+  block instead of being rejected with the binary-content hint.
+  Surfaced live when an agent tried to read a published `server.json`
+  spec and got the "binary resource" stub back.
+- `mcpName` field in `package.json` and a top-level `server.json` so
+  the package can be submitted to the official
+  [MCP Registry](https://registry.modelcontextprotocol.io/). The
+  registry uses these to verify the npm package and the registry
+  entry agree before listing.
+- Four new tests in `tests/url-reader.test.ts` covering JSON pass-through,
+  JSON content-type variants, lying content-type fallback, and
+  plaintext verbatim handling.
+
+### Changed
+- `web_url_read`'s plaintext / non-HTML textual responses now pass
+  through verbatim instead of going through `node-html-markdown`. The
+  HTML parser was silently decoding entities the page may have meant
+  literally (e.g. a CSV containing `&amp;` getting rewritten to `&`).
+- The "not HTML/text" hint message updated to mention JSON in the
+  accepted set, so the wording stays accurate.
+
 ## [0.3.1] — 2026-05-03
 
 ### Changed

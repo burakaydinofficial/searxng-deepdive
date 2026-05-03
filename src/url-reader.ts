@@ -81,6 +81,18 @@ function snippetOf(text: string, max = 200): string {
   return compact.length > max ? `${compact.slice(0, max)}…` : compact;
 }
 
+// Format a JSON body as a fenced markdown code block so the LLM consumer
+// sees structured, human-readable output. Falls back to the raw text if
+// the body doesn't actually parse — a lying content-type shouldn't crash
+// the reader; better to surface what arrived than to swallow it.
+function formatJsonAsMarkdown(text: string): string {
+  try {
+    return "```json\n" + JSON.stringify(JSON.parse(text), null, 2) + "\n```";
+  } catch {
+    return text;
+  }
+}
+
 function emptyHint(extracted: string, msg: string): string | undefined {
   return extracted.trim() === "" ? msg : undefined;
 }
@@ -203,15 +215,24 @@ export async function fetchAndConvertToMarkdown(
   }
 
   const contentType = String(headers["content-type"] ?? "").toLowerCase();
-  // Accept HTML, plaintext, and (silently) anything without a content-type
-  // header. Reject other binary-ish types with a hint instead of a confusing
-  // crash from passing PDF/binary bytes through the HTML→MD converter.
+  // Accept HTML/XML, JSON (including +json variants), any text/* subtype,
+  // and (silently) responses without a content-type header. Reject other
+  // binary-ish types with a hint instead of a confusing crash from passing
+  // PDF/image bytes through the HTML→Markdown converter.
+  //
+  // JSON-shaped types (application/json, application/ld+json,
+  // application/vnd.api+json, etc.) are intentionally allowed: research
+  // agents legitimately need to read spec/manifest files (server.json,
+  // OpenAPI definitions, registry API responses), and rejecting them
+  // forced a "binary resource" stub even though the body was text.
+  const isHtml =
+    contentType.includes("html") || contentType.includes("xml");
+  const isJson =
+    /\bapplication\/(?:[\w.+-]+\+)?json\b/.test(contentType) ||
+    contentType.startsWith("text/json");
+  const isPlainText = contentType.startsWith("text/");
   const looksTextual =
-    contentType === "" ||
-    contentType.includes("html") ||
-    contentType.includes("xml") ||
-    contentType.includes("text/plain") ||
-    contentType.includes("text/markdown");
+    contentType === "" || isHtml || isJson || isPlainText;
   if (!looksTextual) {
     return {
       url,
@@ -219,11 +240,20 @@ export async function fetchAndConvertToMarkdown(
       markdown: "",
       total_length: 0,
       truncated: false,
-      hint: `URL returned content-type "${contentType}" — not HTML/text. The page is likely a binary resource (PDF, image, archive, etc.) and can't be Markdown-converted. Use a different tool for binary downloads.`,
+      hint: `URL returned content-type "${contentType}" — not HTML/text/JSON. The page is likely a binary resource (PDF, image, archive, etc.) and can't be Markdown-converted. Use a different tool for binary downloads.`,
     };
   }
 
-  const fullMarkdown = nhm.translate(text);
+  // HTML/XML → node-html-markdown. JSON → pretty-print inside a fenced
+  // code block so the structure survives round-tripping through an LLM.
+  // Plaintext / unspecified content-type pass through verbatim — running
+  // them through the HTML parser would silently decode entities the page
+  // may have meant literally (e.g. a CSV line containing "&amp;").
+  const fullMarkdown = isHtml
+    ? nhm.translate(text)
+    : isJson
+      ? formatJsonAsMarkdown(text)
+      : text;
   const totalLength = fullMarkdown.length;
 
   // Extraction modes — applied in priority order; first set wins.
