@@ -7,7 +7,7 @@
 //
 // Stack: undici for HTTP, node-html-markdown for HTML→Markdown conversion.
 
-import { request } from "undici";
+import { request, getGlobalDispatcher, interceptors } from "undici";
 import { NodeHtmlMarkdown } from "node-html-markdown";
 import { VERSION } from "./version.js";
 
@@ -169,6 +169,11 @@ export async function fetchAndConvertToMarkdown(
     );
   }
 
+  // undici@7+ removed `maxRedirections` from request options; redirect
+  // handling is now a composable interceptor on a dispatcher. Composing
+  // onto the *current global* dispatcher (rather than a fresh Agent) is
+  // what lets the test suite swap in a MockAgent without our redirect
+  // wrapper bypassing it.
   const { body, statusCode, headers } = await request(url, {
     headersTimeout: HEADERS_TIMEOUT_MS,
     bodyTimeout: BODY_TIMEOUT_MS,
@@ -178,7 +183,9 @@ export async function fetchAndConvertToMarkdown(
         `Mozilla/5.0 (compatible; searxng-deepdive/${VERSION}; +https://github.com/burakaydinofficial/searxng-deepdive)`,
       accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     },
-    maxRedirections: 5,
+    dispatcher: getGlobalDispatcher().compose(
+      interceptors.redirect({ maxRedirections: 5 }),
+    ),
   });
 
   const { text, truncated } = await readTextWithCap(body, MAX_BODY_BYTES);

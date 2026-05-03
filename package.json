@@ -46,9 +46,9 @@
     "access": "public"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "node-html-markdown": "^2.0.0",
-    "undici": "^6.20.0",
+    "undici": "^8.2.0",
     "zod": "^3.23.8",
     "zod-to-json-schema": "^3.23.5"
   },
