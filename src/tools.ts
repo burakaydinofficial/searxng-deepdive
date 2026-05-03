@@ -10,8 +10,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { z, type ZodType } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import { z } from "zod";
 import {
   type SearchResult,
   type SearchResponse,
@@ -39,8 +38,13 @@ import { fetchAndConvertToMarkdown } from "./url-reader.js";
 interface ToolDef<T> {
   name: string;
   description: string;
-  inputSchema: ReturnType<typeof zodToJsonSchema>;
-  zodSchema: ZodType<T>;
+  // Zod 4's `z.toJSONSchema` is overloaded (single schema vs registry);
+  // ReturnType<> picks the registry signature, which doesn't match the
+  // schema-form payload we actually use. Type as a plain JSON-Schema-
+  // shaped object — we only forward it to the MCP client verbatim, so
+  // a permissive shape is correct here.
+  inputSchema: Record<string, unknown>;
+  zodSchema: z.ZodType<T>;
   handler: (input: T) => Promise<unknown>;
 }
 
@@ -308,15 +312,15 @@ export async function registerTools(
     {
       name: "search",
       description: searchDescription(config),
-      inputSchema: zodToJsonSchema(SearchInput),
-      zodSchema: SearchInput as ZodType<unknown>,
+      inputSchema: z.toJSONSchema(SearchInput) as Record<string, unknown>,
+      zodSchema: SearchInput as z.ZodType<unknown>,
       handler: (input) => doSearch(client, config, input as SearchInputT),
     },
     {
       name: "search_on_engines",
       description: searchOnEnginesDescription(config),
-      inputSchema: zodToJsonSchema(SearchOnEnginesInput),
-      zodSchema: SearchOnEnginesInput as ZodType<unknown>,
+      inputSchema: z.toJSONSchema(SearchOnEnginesInput) as Record<string, unknown>,
+      zodSchema: SearchOnEnginesInput as z.ZodType<unknown>,
       handler: (input) => {
         const i = input as SearchOnEnginesInputT;
         return doSearch(client, config, { ...i, engines: i.engines });
@@ -325,8 +329,8 @@ export async function registerTools(
     {
       name: "search_by_category",
       description: searchByCategoryDescription(config),
-      inputSchema: zodToJsonSchema(SearchByCategoryInput),
-      zodSchema: SearchByCategoryInput as ZodType<unknown>,
+      inputSchema: z.toJSONSchema(SearchByCategoryInput) as Record<string, unknown>,
+      zodSchema: SearchByCategoryInput as z.ZodType<unknown>,
       handler: (input) => {
         const i = input as SearchByCategoryInputT;
         return doSearch(client, config, { ...i, categories: i.categories });
@@ -335,8 +339,8 @@ export async function registerTools(
     {
       name: "web_url_read",
       description: webUrlReadDescription(),
-      inputSchema: zodToJsonSchema(WebUrlReadInput),
-      zodSchema: WebUrlReadInput as ZodType<unknown>,
+      inputSchema: z.toJSONSchema(WebUrlReadInput) as Record<string, unknown>,
+      zodSchema: WebUrlReadInput as z.ZodType<unknown>,
       handler: (input) => fetchAndConvertToMarkdown(
         (input as WebUrlReadInputT).url,
         input as WebUrlReadInputT,
@@ -362,8 +366,9 @@ export async function registerTools(
       parsed = tool.zodSchema.parse(req.params.arguments ?? {});
     } catch (e) {
       if (e instanceof z.ZodError) {
+        // zod 4 renamed ZodError.errors → .issues; same shape per item.
         throw new Error(
-          `Invalid arguments for ${tool.name}: ${e.errors
+          `Invalid arguments for ${tool.name}: ${e.issues
             .map((er) => `${er.path.join(".")} ${er.message}`)
             .join("; ")}`,
         );

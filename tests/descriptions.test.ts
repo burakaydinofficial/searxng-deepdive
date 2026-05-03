@@ -4,7 +4,7 @@ import {
   searchOnEnginesDescription,
   searchByCategoryDescription,
 } from "../src/descriptions.js";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import { z } from "zod";
 import {
   SearchInput,
   SearchOnEnginesInput,
@@ -132,9 +132,9 @@ describe("schema describe() strings — anti-pattern checks", () => {
   // in future schema edits, fail loudly. zodToJsonSchema produces the same
   // shape we hand to the MCP client, so this is what the LLM actually sees.
   const allDescriptions = [
-    JSON.stringify(zodToJsonSchema(SearchInput)),
-    JSON.stringify(zodToJsonSchema(SearchOnEnginesInput)),
-    JSON.stringify(zodToJsonSchema(SearchByCategoryInput)),
+    JSON.stringify(z.toJSONSchema(SearchInput)),
+    JSON.stringify(z.toJSONSchema(SearchOnEnginesInput)),
+    JSON.stringify(z.toJSONSchema(SearchByCategoryInput)),
   ].join("\n");
 
   it("does not claim time_range is 'ignored by engines that don't support it'", () => {
