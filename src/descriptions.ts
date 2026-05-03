@@ -24,27 +24,65 @@ export function searchDescription(_cfg: SearxngConfig): string {
 }
 
 export function searchOnEnginesDescription(cfg: SearxngConfig): string {
+  // Pick a science-shaped example if we have one, otherwise fall back to
+  // whatever's available, so the example is never misleading.
+  const has = (n: string) => cfg.enabledEngines.includes(n);
+  const academic = ["arxiv", "semantic scholar", "pubmed"].filter(has);
+  const exampleAcademic = academic.length >= 2
+    ? `engines: [${academic.map((e) => JSON.stringify(e)).join(", ")}]`
+    : `engines: [${cfg.enabledEngines.slice(0, 2).map((e) => JSON.stringify(e)).join(", ")}]`;
+
   return [
     "Search using ONLY the specified engines.",
     "",
     "Use when you have a specific source preference: 'just ArXiv and Semantic Scholar',",
     "'use only DuckDuckGo for fast triage', 'compare Google vs Brave on the same query'.",
     "",
-    `Available engines on this instance (${cfg.enabledEngines.length} total):`,
+    "============================================================",
+    "VALID `engines` values are the engine names listed below.",
+    "DO NOT pass category names here (use search_by_category for those).",
+    "============================================================",
+    "",
+    "EXAMPLES of valid invocation:",
+    `  ${exampleAcademic}                    ← academic-source search`,
+    `  engines: ["duckduckgo"]                                        ← single-engine triage`,
+    `  engines: ["google", "brave"]                                   ← compare two engines`,
+    "",
+    "WRONG (these would be ignored — they are CATEGORIES, not engines):",
+    "  engines: [\"science\"]                                          ❌",
+    "  engines: [\"scientific publications\"]                          ❌",
+    "  engines: [\"news\"]                                             ❌",
+    "  → for those use search_by_category instead.",
+    "",
+    `Engine names enabled on this instance (${cfg.enabledEngines.length} total):`,
     `  ${cfg.enabledEngines.join(", ")}`,
     "",
-    "Pass engine names exactly as listed above. Engines not in this list will be ignored.",
     "Multi-page fanout (pages=N) and other knobs work the same as the broad `search` tool.",
   ].join("\n");
 }
 
 export function searchByCategoryDescription(cfg: SearxngConfig): string {
-  const categoryLines = cfg.enabledCategories.map((cat) => {
+  // Show category names on their own first (the actionable list), then
+  // show what engines belong to each (reference only). The earlier flat
+  // "category (N): engine1, engine2, ..." format caused agents to confuse
+  // engine names with category names and pass them in the categories
+  // array. Examples + anti-examples below close that loop.
+  const categoryReferenceLines = cfg.enabledCategories.map((cat) => {
     const engines = cfg.enginesByCategory[cat] ?? [];
     const sample = engines.slice(0, 5).join(", ");
     const more = engines.length > 5 ? `, +${engines.length - 5} more` : "";
-    return `  • ${cat} (${engines.length}): ${sample}${more}`;
+    return `  • ${cat} → ${sample}${more}`;
   });
+
+  // Pick concrete examples that actually exist on this instance.
+  const has = (c: string) => cfg.enabledCategories.includes(c);
+  const sciCat = has("scientific publications")
+    ? "scientific publications"
+    : has("science")
+      ? "science"
+      : cfg.enabledCategories[0] ?? "general";
+  const newsCat = has("news") ? "news" : cfg.enabledCategories[0] ?? "general";
+  const itCat = has("it") ? "it" : cfg.enabledCategories[0] ?? "general";
 
   return [
     "Search within one or more categories — runs every engine tagged with each.",
@@ -52,10 +90,26 @@ export function searchByCategoryDescription(cfg: SearxngConfig): string {
     "Use when you want broad coverage of a content type without enumerating engines:",
     "  'all science engines for X', 'all news engines for X', 'all IT/code engines for X'.",
     "",
-    "Available categories on this instance:",
-    ...categoryLines,
+    "============================================================",
+    "VALID `categories` values are the names listed in 'Categories' below.",
+    "DO NOT pass engine names here (use search_on_engines for those).",
+    "============================================================",
     "",
-    "Pass category names exactly as listed above. Multi-page fanout (pages=N) and other",
-    "knobs work the same as the broad `search` tool.",
+    `Categories enabled on this instance: ${cfg.enabledCategories.join(", ")}`,
+    "",
+    "EXAMPLES of valid invocation:",
+    `  categories: [${JSON.stringify(sciCat)}]                       ← all engines in '${sciCat}'`,
+    `  categories: [${JSON.stringify(newsCat)}]                                          ← all '${newsCat}' engines`,
+    `  categories: [${JSON.stringify(sciCat)}, ${JSON.stringify(itCat)}]               ← multiple categories combined`,
+    "",
+    "WRONG (these would be ignored — they are ENGINES, not categories):",
+    "  categories: [\"arxiv\", \"pubmed\"]                                ❌",
+    "  categories: [\"google\", \"bing\"]                                 ❌",
+    "  → for those use search_on_engines instead.",
+    "",
+    "For reference, which engines belong to each category:",
+    ...categoryReferenceLines,
+    "",
+    "Multi-page fanout (pages=N) and other knobs work the same as the broad `search` tool.",
   ].join("\n");
 }
