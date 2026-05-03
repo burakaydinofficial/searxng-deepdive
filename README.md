@@ -97,6 +97,15 @@ Recommended workflow for long pages: TOC scan first (`readHeadings`), then
 targeted read (`section`). Far more token-efficient than fetching the full
 page up front.
 
+If `readHeadings` comes back with no entries (Reddit threads, comment
+sections, blog posts that use bold paragraphs instead of `<h*>` tags),
+the page is structurally flat — fall through to `paragraphRange` for
+sequential sampling, or just fetch without an extraction mode.
+
+`web_url_read` also accepts JSON, YAML, and TOML content-types directly
+(spec files, package manifests, registry API responses, CI workflow
+YAML), so research agents can read these without the HTML-only stub.
+
 For JS-rendered SPAs and bot-protected sites this tool returns minimal/empty
 content — fall back to a Chromium-backed reader (e.g. Crawl4AI) for those.
 

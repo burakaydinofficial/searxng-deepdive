@@ -225,14 +225,27 @@ export async function fetchAndConvertToMarkdown(
   // agents legitimately need to read spec/manifest files (server.json,
   // OpenAPI definitions, registry API responses), and rejecting them
   // forced a "binary resource" stub even though the body was text.
+  //
+  // YAML and TOML get the same treatment for the same reason — config
+  // files, package manifests (Cargo.toml, pyproject.toml), CI workflow
+  // YAML, OpenAPI specs as YAML — all legitimate research-time targets.
   const isHtml =
     contentType.includes("html") || contentType.includes("xml");
   const isJson =
     /\bapplication\/(?:[\w.+-]+\+)?json\b/.test(contentType) ||
     contentType.startsWith("text/json");
+  const isStructuredTextApp =
+    contentType.startsWith("application/yaml") ||
+    contentType.startsWith("application/x-yaml") ||
+    contentType.startsWith("application/toml") ||
+    contentType.startsWith("application/x-toml");
   const isPlainText = contentType.startsWith("text/");
   const looksTextual =
-    contentType === "" || isHtml || isJson || isPlainText;
+    contentType === "" ||
+    isHtml ||
+    isJson ||
+    isStructuredTextApp ||
+    isPlainText;
   if (!looksTextual) {
     return {
       url,
@@ -240,7 +253,7 @@ export async function fetchAndConvertToMarkdown(
       markdown: "",
       total_length: 0,
       truncated: false,
-      hint: `URL returned content-type "${contentType}" — not HTML/text/JSON. The page is likely a binary resource (PDF, image, archive, etc.) and can't be Markdown-converted. Use a different tool for binary downloads.`,
+      hint: `URL returned content-type "${contentType}" — not HTML/text/JSON/YAML/TOML. The page is likely a binary resource (PDF, image, archive, etc.) and can't be Markdown-converted. Use a different tool for binary downloads.`,
     };
   }
 

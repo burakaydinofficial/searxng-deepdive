@@ -6,7 +6,25 @@ versioning is [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.3] — 2026-05-03
+
+### Added
+- `web_url_read` now accepts `application/yaml`, `application/x-yaml`,
+  `application/toml`, and `application/x-toml` content-types, in
+  addition to the JSON / HTML / XML / `text/*` it already accepted.
+  YAML and TOML pass through verbatim (they're already human-readable
+  text); JSON still gets pretty-printed in a fenced block. Same
+  motivation as the JSON fix in 0.3.2 — research agents reading
+  manifests (Cargo.toml, pyproject.toml), CI workflow YAML, OpenAPI
+  specs in YAML, etc., were getting binary-resource stubs.
+- Three new tests pinning the YAML pass-through, TOML pass-through,
+  and "still rejects genuinely binary types" branches.
+
 ### Changed
+- README's `web_url_read` workflow note now explicitly tells callers
+  what to do when `readHeadings` returns empty (fall through to
+  `paragraphRange` for structurally-flat pages like Reddit threads),
+  and lists the JSON/YAML/TOML acceptance.
 - Release workflow (`.github/workflows/publish.yml`) now publishes to
   the official MCP Registry (`registry.modelcontextprotocol.io`) right
   after the npm publish, via `mcp-publisher` + GitHub OIDC. Same
@@ -14,6 +32,7 @@ versioning is [Semantic Versioning](https://semver.org/).
   new long-lived secret. The registry side requires no pre-config —
   authorization is by the namespace match between
   `io.github.<owner>/...` and the GitHub repo's OIDC subject.
+  **0.3.3 is the first release exercising this end-to-end.**
 - `server.json`'s `version` (top-level and per-`packages[]`) is now
   rewritten transiently in the workflow to match the release tag.
   Contributors only have to bump `package.json`'s version per release;

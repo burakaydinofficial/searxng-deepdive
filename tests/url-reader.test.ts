@@ -361,6 +361,44 @@ describe("fetchAndConvertToMarkdown", () => {
     expect(r.markdown).toBe("{not valid json}"); // no crash, no code fence
   });
 
+  it("accepts application/yaml content-type and passes through verbatim", async () => {
+    const yaml = "name: example\nlist:\n  - one\n  - two\n";
+    pool()
+      .intercept({ path: "/y" })
+      .reply(200, yaml, {
+        headers: { "content-type": "application/yaml" },
+      });
+
+    const r = await fetchAndConvertToMarkdown(`${ORIGIN}/y`);
+    // No HTML conversion, no JSON code-fence — YAML is human-readable text.
+    expect(r.markdown).toBe(yaml);
+  });
+
+  it("accepts application/toml content-type and passes through verbatim", async () => {
+    const toml = '[package]\nname = "example"\nversion = "1.0.0"\n';
+    pool()
+      .intercept({ path: "/t" })
+      .reply(200, toml, {
+        headers: { "content-type": "application/toml" },
+      });
+
+    const r = await fetchAndConvertToMarkdown(`${ORIGIN}/t`);
+    expect(r.markdown).toBe(toml);
+  });
+
+  it("rejects truly binary content-types with the diagnostic hint", async () => {
+    pool()
+      .intercept({ path: "/zip" })
+      .reply(200, "PK...binary garbage", {
+        headers: { "content-type": "application/zip" },
+      });
+
+    const r = await fetchAndConvertToMarkdown(`${ORIGIN}/zip`);
+    expect(r.markdown).toBe("");
+    expect(r.hint).toMatch(/HTML\/text\/JSON\/YAML\/TOML/);
+    expect(r.hint).toMatch(/binary resource/);
+  });
+
   it("passes plaintext through verbatim without HTML-entity decoding", async () => {
     pool()
       .intercept({ path: "/text" })

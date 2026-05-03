@@ -1,6 +1,6 @@
 {
   "name": "searxng-deepdive",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "mcpName": "io.github.burakaydinofficial/searxng-deepdive",
   "description": "MCP server for SearXNG with engine/category targeting, multi-page fanout, and dynamically-generated tool descriptions tailored to the instance's actual enabled engine pool.",
   "type": "module",
