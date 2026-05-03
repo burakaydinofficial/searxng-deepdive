@@ -5,12 +5,11 @@
 // outbound user-agent (src/url-reader.ts) both consume this.
 //
 // Why a runtime read instead of `import pkg from "../package.json"`?
-//   - Node ESM requires `with { type: "json" }` import attributes for JSON
-//     modules, which only stabilized in Node 20+. Our `engines` allows Node 18.
 //   - tsconfig has `rootDir: "./src"`, so an `import "../package.json"`
-//     would also fight the emitted directory layout.
-//   - The publish workflow already verifies tag↔package.json agreement, so
-//     this read becomes the single hop the rest of the code depends on.
+//     fights the emitted directory layout — package.json sits above
+//     rootDir and wouldn't be copied into dist/ on build.
+//   - The publish workflow already verifies tag↔package.json agreement,
+//     so this read becomes the single hop the rest of the code depends on.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
