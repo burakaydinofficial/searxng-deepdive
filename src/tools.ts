@@ -12,6 +12,7 @@ import {
   type SearchResult,
   type SearchResponse,
   type SearxngClient,
+  type SearxngConfig,
 } from "./searxng.js";
 import {
   SearchInput,
@@ -68,8 +69,68 @@ function trimToCompact(
   };
 }
 
+// Cross-validate engine/category names against the live config. The most
+// common LLM mistake we've seen is passing engine names where categories
+// belong (e.g. categories=["arxiv","pubmed"]). Without validation, SearXNG
+// silently ignores unknown values and falls back to defaults — the model
+// sees "60 results" and assumes success even though the search ran on the
+// wrong engines. This converts that into a loud error with a "did you
+// mean" hint.
+function validateEngineSelection(
+  engines: string[],
+  config: SearxngConfig,
+): void {
+  const invalid = engines.filter((e) => !config.enabledEngines.includes(e));
+  if (invalid.length === 0) return;
+
+  const matchedCategories = invalid.filter((e) =>
+    config.enabledCategories.includes(e),
+  );
+  const hint =
+    matchedCategories.length > 0
+      ? ` ${matchedCategories.length === 1 ? "Note" : "Note"}: ${matchedCategories
+          .map((c) => `"${c}"`)
+          .join(", ")} ${matchedCategories.length === 1 ? "is a category" : "are categories"}, not engines. Use the \`search_by_category\` tool with those.`
+      : "";
+
+  const enginePreview = config.enabledEngines.slice(0, 25).join(", ");
+  const more =
+    config.enabledEngines.length > 25
+      ? `, … (${config.enabledEngines.length - 25} more, see this tool's description)`
+      : "";
+
+  throw new Error(
+    `Invalid engine name${invalid.length > 1 ? "s" : ""}: ${invalid.map((e) => `"${e}"`).join(", ")}.${hint} Available engines on this instance (${config.enabledEngines.length} total): ${enginePreview}${more}.`,
+  );
+}
+
+function validateCategorySelection(
+  categories: string[],
+  config: SearxngConfig,
+): void {
+  const invalid = categories.filter(
+    (c) => !config.enabledCategories.includes(c),
+  );
+  if (invalid.length === 0) return;
+
+  const matchedEngines = invalid.filter((c) =>
+    config.enabledEngines.includes(c),
+  );
+  const hint =
+    matchedEngines.length > 0
+      ? ` ${matchedEngines.length === 1 ? "Note" : "Note"}: ${matchedEngines
+          .map((e) => `"${e}"`)
+          .join(", ")} ${matchedEngines.length === 1 ? "is an engine" : "are engines"}, not categories. Use the \`search_on_engines\` tool with those.`
+      : "";
+
+  throw new Error(
+    `Invalid categor${invalid.length > 1 ? "ies" : "y"}: ${invalid.map((c) => `"${c}"`).join(", ")}.${hint} Available categories on this instance: ${config.enabledCategories.join(", ")}.`,
+  );
+}
+
 async function doSearch(
   client: SearxngClient,
+  config: SearxngConfig,
   input: {
     query: string;
     engines?: string[];
@@ -82,6 +143,9 @@ async function doSearch(
     format?: "full" | "compact";
   },
 ): Promise<unknown> {
+  if (input.engines?.length) validateEngineSelection(input.engines, config);
+  if (input.categories?.length) validateCategorySelection(input.categories, config);
+
   const pages = input.pages ?? 1;
   const format = input.format ?? "compact";
 
@@ -123,7 +187,7 @@ export async function registerTools(
       description: searchDescription(config),
       inputSchema: zodToJsonSchema(SearchInput),
       zodSchema: SearchInput as ZodType<unknown>,
-      handler: (input) => doSearch(client, input as SearchInputT),
+      handler: (input) => doSearch(client, config, input as SearchInputT),
     },
     {
       name: "search_on_engines",
@@ -132,7 +196,7 @@ export async function registerTools(
       zodSchema: SearchOnEnginesInput as ZodType<unknown>,
       handler: (input) => {
         const i = input as SearchOnEnginesInputT;
-        return doSearch(client, { ...i, engines: i.engines });
+        return doSearch(client, config, { ...i, engines: i.engines });
       },
     },
     {
@@ -142,7 +206,7 @@ export async function registerTools(
       zodSchema: SearchByCategoryInput as ZodType<unknown>,
       handler: (input) => {
         const i = input as SearchByCategoryInputT;
-        return doSearch(client, { ...i, categories: i.categories });
+        return doSearch(client, config, { ...i, categories: i.categories });
       },
     },
   ];
