@@ -9,11 +9,48 @@
 
 import { request } from "undici";
 import { NodeHtmlMarkdown } from "node-html-markdown";
+import { VERSION } from "./version.js";
 
 const HEADERS_TIMEOUT_MS = 10_000;
 const BODY_TIMEOUT_MS = 30_000;
+// Bound the body we'll buffer from a single fetch. node-html-markdown scans
+// every byte, so an unbounded read on a misconfigured (or adversarial)
+// upstream would balloon memory regardless of any Content-Length lie.
+// 10 MB comfortably covers Wikipedia-class long-form pages while preventing
+// pathological reads.
+export const MAX_BODY_BYTES = 10 * 1024 * 1024;
 
 const nhm = new NodeHtmlMarkdown();
+
+// Stream-read the body up to `cap` bytes. Returns `truncated: true` if we
+// hit the cap before the stream ended — caller decides whether to still
+// honor the partial body (e.g. for an error snippet) or reject outright.
+//
+// Exported for direct unit testing; the helper isn't used outside this
+// module in production.
+export async function readTextWithCap(
+  body: AsyncIterable<Buffer | Uint8Array | string>,
+  cap: number,
+): Promise<{ text: string; truncated: boolean }> {
+  let total = 0;
+  const chunks: Buffer[] = [];
+  for await (const chunk of body) {
+    const buf =
+      typeof chunk === "string"
+        ? Buffer.from(chunk)
+        : Buffer.isBuffer(chunk)
+          ? chunk
+          : Buffer.from(chunk);
+    if (total + buf.length > cap) {
+      const remaining = cap - total;
+      if (remaining > 0) chunks.push(buf.subarray(0, remaining));
+      return { text: Buffer.concat(chunks).toString("utf8"), truncated: true };
+    }
+    chunks.push(buf);
+    total += buf.length;
+  }
+  return { text: Buffer.concat(chunks).toString("utf8"), truncated: false };
+}
 
 export interface ReadOptions {
   startChar?: number;
@@ -138,16 +175,23 @@ export async function fetchAndConvertToMarkdown(
     // Pretend to be a generic browser; many sites 403 on bare undici UA.
     headers: {
       "user-agent":
-        "Mozilla/5.0 (compatible; searxng-deepdive/0.2; +https://github.com/burakaydinofficial/SearXNG-Compose)",
+        `Mozilla/5.0 (compatible; searxng-deepdive/${VERSION}; +https://github.com/burakaydinofficial/searxng-deepdive)`,
       accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     },
     maxRedirections: 5,
   });
 
-  const text = await body.text();
+  const { text, truncated } = await readTextWithCap(body, MAX_BODY_BYTES);
   if (statusCode >= 400) {
+    // Surface the upstream snippet even on truncated bodies — the first 10MB
+    // is more than enough for diagnostic context.
     throw new Error(
       `URL returned HTTP ${statusCode}: ${snippetOf(text)} (URL: ${url})`,
+    );
+  }
+  if (truncated) {
+    throw new Error(
+      `URL response exceeded ${MAX_BODY_BYTES} bytes; refusing to process. The page is too large to safely convert. (URL: ${url})`,
     );
   }
 

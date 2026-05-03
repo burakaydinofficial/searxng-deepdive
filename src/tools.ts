@@ -296,8 +296,13 @@ async function doSearch(
 export async function registerTools(
   server: Server,
   client: SearxngClient,
+  config: SearxngConfig,
 ): Promise<void> {
-  const config = await client.getConfig();
+  // Config is passed in (rather than fetched here) so the entrypoint can
+  // probe SearXNG once for both the startup log and the dynamic tool
+  // descriptions — a second /config round-trip during MCP setup would
+  // also create a tiny window where the descriptions could disagree with
+  // the engine count we just printed.
 
   const tools: ToolDef<unknown>[] = [
     {

@@ -11,6 +11,7 @@ import {
   extractHeadings,
   extractSection,
   extractParagraphRange,
+  readTextWithCap,
 } from "../src/url-reader.js";
 
 const ORIGIN = "http://example.test";
@@ -109,6 +110,33 @@ describe("extractSection", () => {
     const out = extractSection(dup, "A");
     expect(out).toContain("first");
     expect(out).not.toContain("second");
+  });
+});
+
+describe("readTextWithCap", () => {
+  async function* feed(...chunks: string[]): AsyncIterable<Buffer> {
+    for (const c of chunks) yield Buffer.from(c, "utf8");
+  }
+
+  it("returns the full text when the stream stays under the cap", async () => {
+    const r = await readTextWithCap(feed("hello ", "world"), 100);
+    expect(r).toEqual({ text: "hello world", truncated: false });
+  });
+
+  it("truncates to exactly `cap` bytes when the stream exceeds it", async () => {
+    const r = await readTextWithCap(feed("aaaa", "bbbb", "cccc"), 6);
+    expect(r.truncated).toBe(true);
+    expect(r.text).toBe("aaaabb"); // first 6 bytes
+  });
+
+  it("returns empty string for an empty stream", async () => {
+    const r = await readTextWithCap(feed(), 100);
+    expect(r).toEqual({ text: "", truncated: false });
+  });
+
+  it("handles cap=0 by truncating immediately on first non-empty chunk", async () => {
+    const r = await readTextWithCap(feed("anything"), 0);
+    expect(r).toEqual({ text: "", truncated: true });
   });
 });
 
