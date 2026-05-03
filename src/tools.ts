@@ -1,5 +1,9 @@
 // Tool registration. Three tools, all backed by a single doSearch() that
 // applies the format=compact trim and (optionally) multi-page fanout.
+//
+// Most of the agent-ergonomics logic in this file (validation, hints,
+// normalization, compact-trim) is exported separately so the test suite
+// can exercise it without spinning up an MCP transport.
 
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
@@ -43,7 +47,7 @@ interface CompactResult {
   engine: string;
 }
 
-interface CompactResponse {
+export interface CompactResponse {
   query: string;
   result_count: number;
   pages_fetched: number;
@@ -52,87 +56,17 @@ interface CompactResponse {
   hint?: string;
 }
 
-interface ZeroResultContext {
+export interface ZeroResultContext {
   time_range?: string;
   engines?: string[];
   categories?: string[];
-}
-
-// When a search returns zero results, the model needs a signal about why.
-// SearXNG-reported `unresponsive_engines` covers some cases (rate-limiting,
-// CAPTCHA), but others fail silently — most notably engines that don't
-// implement time_range filtering (arxiv, pubmed, semantic scholar) which
-// return empty when the filter is set instead of ignoring it. This builder
-// inspects the response + the original parameters and emits a one-line
-// hint the model can self-correct from.
-function buildZeroResultHint(
-  resp: SearchResponse,
-  ctx: ZeroResultContext,
-): string | undefined {
-  if (resp.results.length > 0) return undefined;
-
-  const hints: string[] = [];
-
-  if (ctx.time_range) {
-    hints.push(
-      `time_range="${ctx.time_range}" was set. Not all engines implement time-range filtering — some return empty when it is specified instead of ignoring it. If you actually need recency, try the same query without time_range first to confirm there are matching results, then narrow down.`,
-    );
-  }
-
-  const unresponsiveCount = Array.isArray(resp.unresponsive_engines)
-    ? resp.unresponsive_engines.length
-    : 0;
-
-  if (
-    unresponsiveCount > 0 &&
-    ctx.engines &&
-    ctx.engines.length > 0 &&
-    unresponsiveCount >= ctx.engines.length
-  ) {
-    hints.push(
-      `All ${ctx.engines.length} requested engines were unresponsive (rate-limited or blocked at upstream).`,
-    );
-  } else if (
-    !ctx.time_range &&
-    ctx.engines &&
-    ctx.engines.length === 1 &&
-    unresponsiveCount === 0
-  ) {
-    hints.push(
-      `Only one engine ("${ctx.engines[0]}") was queried and returned nothing. Try the broad \`search\` tool, or list additional engines, for more coverage.`,
-    );
-  }
-
-  return hints.length > 0 ? hints.join(" ") : undefined;
-}
-
-function trimToCompact(
-  resp: SearchResponse,
-  pagesFetched: number,
-  ctx: ZeroResultContext,
-): CompactResponse {
-  const out: CompactResponse = {
-    query: resp.query,
-    result_count: resp.results.length,
-    pages_fetched: pagesFetched,
-    unresponsive_engines: resp.unresponsive_engines ?? [],
-    results: resp.results.map((r: SearchResult) => ({
-      url: r.url,
-      title: r.title,
-      content: r.content,
-      engine: r.engine,
-    })),
-  };
-  const hint = buildZeroResultHint(resp, ctx);
-  if (hint) out.hint = hint;
-  return out;
 }
 
 // Normalize engine/category names so case-mismatched input from the model
 // (e.g. "arXiv", "Semantic Scholar", "PubMed") matches our lowercase config.
 // SearXNG itself is case-sensitive on these names; passing wrong case there
 // silently no-ops. Cheap to be tolerant.
-function normalizeName(s: string): string {
+export function normalizeName(s: string): string {
   return s.trim().toLowerCase();
 }
 
@@ -145,7 +79,7 @@ function normalizeName(s: string): string {
 // Without validation, SearXNG silently ignores unknown values and falls back
 // to defaults — the model sees "60 results" and assumes success even though
 // the search ran on the wrong engines.
-function validateEngineSelection(
+export function validateEngineSelection(
   engines: string[],
   config: SearxngConfig,
 ): void {
@@ -174,7 +108,7 @@ function validateEngineSelection(
   );
 }
 
-function validateCategorySelection(
+export function validateCategorySelection(
   categories: string[],
   config: SearxngConfig,
 ): void {
@@ -199,6 +133,94 @@ function validateCategorySelection(
   );
 }
 
+// When a search returns zero results, the model needs a signal about why.
+// Without this, an empty `results: []` reads to the model as "no matches" and
+// it'll waste turns rephrasing the query when the actual problem was a
+// wrongly-set filter or rate-limited engines.
+//
+// Conditions that produce a hint (in evaluation order — multiple may stack):
+//   1. time_range was set (some engines return empty when filter is set
+//      instead of ignoring it)
+//   2. all explicitly-requested engines were unresponsive
+//   3. some engines were unresponsive AND no engine list was requested
+//      (broad search blind spot — covered)
+//   4. exactly one engine was queried and returned nothing
+export function buildZeroResultHint(
+  resp: SearchResponse,
+  ctx: ZeroResultContext,
+): string | undefined {
+  if (resp.results.length > 0) return undefined;
+
+  const hints: string[] = [];
+
+  if (ctx.time_range) {
+    hints.push(
+      `time_range="${ctx.time_range}" was set. Not all engines implement time-range filtering — some return empty when it is specified instead of ignoring it. If you actually need recency, try the same query without time_range first to confirm there are matching results, then narrow down.`,
+    );
+  }
+
+  const unresponsiveCount = Array.isArray(resp.unresponsive_engines)
+    ? resp.unresponsive_engines.length
+    : 0;
+
+  if (
+    unresponsiveCount > 0 &&
+    ctx.engines &&
+    ctx.engines.length > 0 &&
+    unresponsiveCount >= ctx.engines.length
+  ) {
+    hints.push(
+      `All ${ctx.engines.length} requested engine(s) were unresponsive (rate-limited or blocked at upstream).`,
+    );
+  } else if (
+    unresponsiveCount > 0 &&
+    (!ctx.engines || ctx.engines.length === 0)
+  ) {
+    // Broad-search blind spot: when no engines were specified and several
+    // upstream engines failed, the empty result is likely upstream availability
+    // rather than a bad query. Without this hint the model would retry with
+    // rephrased queries forever.
+    hints.push(
+      `${unresponsiveCount} engine(s) were unresponsive (rate-limited or blocked upstream). The empty result may be due to upstream availability rather than the query — try again, or use search_on_engines to target a specific engine you know is working.`,
+    );
+  } else if (
+    !ctx.time_range &&
+    ctx.engines &&
+    ctx.engines.length === 1 &&
+    unresponsiveCount === 0
+  ) {
+    hints.push(
+      `Only one engine ("${ctx.engines[0]}") was queried and returned nothing. Try the broad \`search\` tool, or list additional engines, for more coverage.`,
+    );
+  }
+
+  return hints.length > 0 ? hints.join(" ") : undefined;
+}
+
+export function trimToCompact(
+  resp: SearchResponse,
+  pagesFetched: number,
+  ctx: ZeroResultContext,
+): CompactResponse {
+  const out: CompactResponse = {
+    query: resp.query,
+    result_count: resp.results.length,
+    pages_fetched: pagesFetched,
+    unresponsive_engines: Array.isArray(resp.unresponsive_engines)
+      ? resp.unresponsive_engines
+      : [],
+    results: resp.results.map((r: SearchResult) => ({
+      url: r.url,
+      title: r.title,
+      content: r.content,
+      engine: r.engine,
+    })),
+  };
+  const hint = buildZeroResultHint(resp, ctx);
+  if (hint) out.hint = hint;
+  return out;
+}
+
 async function doSearch(
   client: SearxngClient,
   config: SearxngConfig,
@@ -215,7 +237,8 @@ async function doSearch(
   },
 ): Promise<unknown> {
   if (input.engines?.length) validateEngineSelection(input.engines, config);
-  if (input.categories?.length) validateCategorySelection(input.categories, config);
+  if (input.categories?.length)
+    validateCategorySelection(input.categories, config);
 
   // Normalize for the actual SearXNG call. SearXNG is case-sensitive on
   // engine/category names; passing wrong case there silently no-ops.

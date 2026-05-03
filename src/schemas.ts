@@ -3,7 +3,10 @@
 //
 // Each .describe() string becomes part of the schema the LLM sees. Treat
 // these as agent-facing copy: terse but specific, and oriented toward the
-// agent's decision ("when do I reach for this knob?").
+// agent's decision ("when do I reach for this knob?"). Critical rule:
+// don't claim a default that the code doesn't actually apply — the model
+// will assume the documented default holds when it omits the field, and
+// silently get different behavior than expected.
 
 import { z } from "zod";
 
@@ -13,7 +16,7 @@ const pageno = z
   .min(1)
   .optional()
   .describe(
-    "1-indexed starting page number. Default 1. Each engine paginates independently; page 2 returns the next ~10 results from each.",
+    "1-indexed starting page number. Default 1. Higher pages fetch additional results from each engine, deduplicated against earlier pages by URL. Per-page yield drops sharply after the first 1-2 pages as engines exhaust their result pools.",
   );
 
 const pages = z
@@ -23,40 +26,45 @@ const pages = z
   .max(5)
   .optional()
   .describe(
-    "Multi-page fanout: fetch this many consecutive pages and merge results with URL-based dedup. Default 1 (single page). Use pages=3 to roughly triple the result set in one call. Capped at 5 to bound token cost.",
+    "Multi-page fanout: fetch this many consecutive pages in parallel and merge with URL-based dedup. Default 1. Combines with pageno: pageno=3 + pages=2 fetches pages 3 and 4. Diminishing returns past page 2 (engines exhaust their result pools); going wide may also rate-limit upstream engines. Capped at 5 to bound token cost.",
   );
 
 const timeRange = z
   .enum(["day", "week", "month", "year"])
   .optional()
   .describe(
-    "Filter to results published within this time window. Useful for news-flavored queries where freshness matters; ignored by engines that don't support it.",
+    "Filter to results published within this time window. WARNING: not all engines implement time-range filtering — some (notably academic engines) return ZERO results when this is set instead of ignoring it. Set time_range only when freshness genuinely matters; if a query returns 0 results with time_range set, retry without it.",
   );
 
 const language = z
   .string()
   .optional()
   .describe(
-    "BCP 47 language code (e.g. 'en', 'fr', 'de') or 'all'. Default 'auto' (let SearXNG pick from the query).",
+    "Language filter, e.g. 'en', 'fr', 'de', 'pt-BR', or 'all' to disable filtering. If omitted, the SearXNG instance's configured default applies (NOT autodetected from the query, despite what the name suggests).",
   );
 
 const safeSearch = z
   .union([z.literal(0), z.literal(1), z.literal(2)])
   .optional()
-  .describe("0 = off, 1 = moderate, 2 = strict. Default 0.");
+  .describe(
+    "Safe-search level. 0 = off, 1 = moderate, 2 = strict. If omitted, the SearXNG instance's configured default applies (often 0 for self-hosted, but not guaranteed).",
+  );
 
 const format = z
   .enum(["full", "compact"])
   .optional()
   .describe(
-    "'compact' (default) trims each result to url/title/content/engine — uses ~80% fewer tokens, recommended for ranking and triage. 'full' returns SearXNG's complete result objects (extra metadata, scores, links). Switch to 'full' only when you need fields beyond the basics.",
+    "'compact' (default) returns only url/title/content/engine for each result — typically much smaller, recommended for ranking and triage. 'full' adds: relevance score, publishedDate, the list of all engines that surfaced the result, and engine-specific metadata (authors, DOI, etc. for academic engines). Switch to 'full' only when you specifically need one of those fields.",
   );
 
+// `.trim().min(1)` rejects whitespace-only queries before they hit SearXNG
+// (which would otherwise just return empty silently).
 const query = z
   .string()
-  .min(1)
+  .trim()
+  .min(1, "query cannot be empty or whitespace-only")
   .describe(
-    "Plain-language search query. Forwarded to each engine's native parser; engine-specific operators (e.g. site:, filetype:) are passed through.",
+    "Plain-language search query. Forwarded to each engine's native parser; engine-specific operators (e.g. site:, filetype:) are passed through unchanged.",
   );
 
 export const SearchInput = z.object({
@@ -72,10 +80,10 @@ export const SearchInput = z.object({
 export const SearchOnEnginesInput = z.object({
   query,
   engines: z
-    .array(z.string())
+    .array(z.string().trim().min(1))
     .min(1)
     .describe(
-      "Engine names to use (must match this instance's enabled list — see this tool's description for the live list). Multiple engines run in parallel and results are merged.",
+      "Engine names to use, lowercase. Multiple engines run in parallel and results are merged. Must match this instance's enabled engines (the available list is enumerated in this tool's description above).",
     ),
   pageno,
   pages,
@@ -88,10 +96,10 @@ export const SearchOnEnginesInput = z.object({
 export const SearchByCategoryInput = z.object({
   query,
   categories: z
-    .array(z.string())
+    .array(z.string().trim().min(1))
     .min(1)
     .describe(
-      "Category names to constrain the search. SearXNG runs every engine tagged with these categories. See this tool's description for the available list and which engines belong to each.",
+      "Category names to constrain the search. SearXNG runs every engine tagged with these categories. The available categories are enumerated in this tool's description above.",
     ),
   pageno,
   pages,

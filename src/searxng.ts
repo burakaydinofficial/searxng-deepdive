@@ -132,9 +132,16 @@ export class SearxngClient {
     return (await body.json()) as SearchResponse;
   }
 
-  // Fan out N consecutive pages, merge with URL-based dedup. Errors on a
-  // single page don't fail the whole call -- they're reported in the merged
-  // unresponsive_engines list.
+  // Fan out N consecutive pages, merge with URL-based dedup. Errors on
+  // *some* pages don't fail the whole call. Errors on *all* pages do —
+  // otherwise the caller silently gets {results: [], pages_fetched: 0}
+  // and the model assumes the query was bad rather than upstream being
+  // unreachable.
+  //
+  // The `unresponsive_engines` accumulator dedupes by JSON-stringified
+  // shape, since SearXNG returns engine-failure entries as `[engine, reason]`
+  // tuples and reporting the same engine N times across N pages misleads
+  // the model into thinking N engines failed when only one did.
   async searchMultiPage(
     params: SearchParams & { pages: number },
   ): Promise<SearchResponse & { pages_fetched: number }> {
@@ -150,28 +157,48 @@ export class SearxngClient {
 
     const seen = new Set<string>();
     const merged: SearchResult[] = [];
+    const unresponsiveSeen = new Set<string>();
     const unresponsiveAccum: unknown[] = [];
-    let totalCount = 0;
     let successfulPages = 0;
+    const failures: unknown[] = [];
 
     for (const settled of responses) {
-      if (settled.status !== "fulfilled") continue;
+      if (settled.status !== "fulfilled") {
+        failures.push(settled.reason);
+        continue;
+      }
       successfulPages++;
       const resp = settled.value;
-      totalCount = Math.max(totalCount, resp.number_of_results ?? 0);
       for (const r of resp.results) {
         if (seen.has(r.url)) continue;
         seen.add(r.url);
         merged.push(r);
       }
-      for (const u of resp.unresponsive_engines ?? []) {
+      const upstream = Array.isArray(resp.unresponsive_engines)
+        ? resp.unresponsive_engines
+        : [];
+      for (const u of upstream) {
+        const key = JSON.stringify(u);
+        if (unresponsiveSeen.has(key)) continue;
+        unresponsiveSeen.add(key);
         unresponsiveAccum.push(u);
       }
     }
 
+    if (successfulPages === 0 && failures.length > 0) {
+      const first = failures[0];
+      const msg = first instanceof Error ? first.message : String(first);
+      throw new Error(
+        `searchMultiPage: all ${pageNumbers.length} requested page(s) failed. First error: ${msg}`,
+      );
+    }
+
     return {
       query: params.query,
-      number_of_results: totalCount,
+      // `number_of_results` here reports the merged result count, not the
+      // upstream estimate. SearXNG's per-page estimate fluctuates and would
+      // contradict the actual array length the caller is reading.
+      number_of_results: merged.length,
       results: merged,
       unresponsive_engines: unresponsiveAccum,
       pages_fetched: successfulPages,
