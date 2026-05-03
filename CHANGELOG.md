@@ -6,6 +6,19 @@ versioning is [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- Release workflow (`.github/workflows/publish.yml`) now publishes to
+  the official MCP Registry (`registry.modelcontextprotocol.io`) right
+  after the npm publish, via `mcp-publisher` + GitHub OIDC. Same
+  `id-token: write` claim that npm Trusted Publishing consumes; no
+  new long-lived secret. The registry side requires no pre-config —
+  authorization is by the namespace match between
+  `io.github.<owner>/...` and the GitHub repo's OIDC subject.
+- `server.json`'s `version` (top-level and per-`packages[]`) is now
+  rewritten transiently in the workflow to match the release tag.
+  Contributors only have to bump `package.json`'s version per release;
+  the workflow keeps registry metadata aligned.
+
 ## [0.3.2] — 2026-05-03
 
 ### Added

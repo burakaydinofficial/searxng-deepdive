@@ -1,20 +1,33 @@
-# Publishes to npm when a git tag matching `v*.*.*` is pushed.
+# Publishes to npm AND the official MCP Registry when a git tag matching
+# `v*.*.*` is pushed.
 #
-# Auth: npm Trusted Publishing via OIDC. The package on npmjs.com is
-# configured with this repo + this workflow filename as a trusted
-# publisher; the npm CLI exchanges GitHub's id-token for a short-lived
-# publish credential at run time. No long-lived NPM_TOKEN secret.
+# Auth (npm):     Trusted Publishing via OIDC. npmjs.com has this repo +
+#                 workflow registered as a trusted publisher; the npm CLI
+#                 exchanges GitHub's id-token for a short-lived publish
+#                 credential at run time. No long-lived NPM_TOKEN secret.
+# Auth (MCP Reg): GitHub OIDC. mcp-publisher exchanges the same id-token
+#                 for an authorized session against
+#                 registry.modelcontextprotocol.io, scoped to the
+#                 io.github.<owner>/ namespace claimed by this repo's
+#                 OIDC subject. No registry-side pre-config beyond the
+#                 namespace match.
 #
 # Release process:
 #   1. bump `version` in package.json
-#   2. commit + push to main, wait for CI green
-#   3. git tag v0.3.1 && git push origin v0.3.1
-#   4. this workflow runs and publishes to npm
+#   2. commit + push to main, wait for the Test workflow green
+#   3. git tag v0.4.0 && git push origin v0.4.0
+#   4. this workflow runs:
+#        - re-runs the full test suite (tag with failing tests won't ship)
+#        - publishes the npm tarball with provenance
+#        - rewrites server.json's version fields to match the tag
+#        - publishes the registry entry via OIDC
 #
-# The workflow re-runs the full test suite before publishing — a tag with
-# failing tests will not ship.
+# server.json on disk is the source of truth for description, env vars,
+# transport — but its `version` fields get overwritten transiently here
+# by the tag, so contributors don't have to remember to bump them in
+# lockstep with package.json.
 
-name: Publish to npm
+name: Publish to npm + MCP Registry
 
 on:
   push:
@@ -62,5 +75,34 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Publish
+      - name: Publish to npm
         run: npm publish --provenance --access public
+
+      # ---------------------------------------------------------------
+      # MCP Registry publish (after npm so the registry never points at
+      # a version that doesn't yet exist on npm).
+      # ---------------------------------------------------------------
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" \
+            | tar xz mcp-publisher
+
+      - name: Sync server.json version with the release tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          node -e "
+            const fs = require('node:fs');
+            const path = './server.json';
+            const s = JSON.parse(fs.readFileSync(path, 'utf8'));
+            s.version = process.argv[1];
+            for (const pkg of (s.packages ?? [])) pkg.version = process.argv[1];
+            fs.writeFileSync(path, JSON.stringify(s, null, 2) + '\n');
+          " "$VERSION"
+          echo "server.json synced to version $VERSION"
+
+      - name: Authenticate to MCP Registry via GitHub OIDC
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to MCP Registry
+        run: ./mcp-publisher publish

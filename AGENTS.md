@@ -78,7 +78,11 @@ scripts/
 
 .github/workflows/
 ├── test.yml          # push/PR/dispatch — Node 20/22/24 × {ubuntu,macos,windows} matrix
-└── publish.yml       # tags v*.*.* — verifies version, runs tests, npm publish
+└── publish.yml       # tags v*.*.* — verifies version, runs tests, then dual-publishes:
+                      #   1. npm tarball with sigstore provenance (npm Trusted Publishing)
+                      #   2. registry.modelcontextprotocol.io entry (mcp-publisher OIDC).
+                      #   server.json version fields are rewritten from the tag at run
+                      #   time so contributors only edit package.json per release.
 ```
 
 ---
