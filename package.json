@@ -36,13 +36,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/burakaydinofficial/SearXNG-Compose.git",
-    "directory": "mcp-server"
+    "url": "git+https://github.com/burakaydinofficial/searxng-deepdive.git"
   },
   "bugs": {
-    "url": "https://github.com/burakaydinofficial/SearXNG-Compose/issues"
+    "url": "https://github.com/burakaydinofficial/searxng-deepdive/issues"
   },
-  "homepage": "https://github.com/burakaydinofficial/SearXNG-Compose/tree/main/mcp-server#readme",
+  "homepage": "https://github.com/burakaydinofficial/searxng-deepdive#readme",
   "publishConfig": {
     "access": "public"
   },
