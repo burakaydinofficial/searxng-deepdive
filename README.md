@@ -58,6 +58,20 @@ SEARXNG_URL=http://127.0.0.1:7979 npm run probe   # exercise the search client
 SEARXNG_URL=http://127.0.0.1:7979 npm run dev      # start the MCP stdio server
 ```
 
+### After making code changes during development
+
+LM Studio (and most other MCP clients) launch the MCP server as a subprocess
+**once** when the plugin loads, then reuse it. Source code changes don't take
+effect until that subprocess is restarted. To pick up edits:
+
+- **Cleanest:** fully quit and reopen LM Studio (closing the chat window
+  doesn't kill plugin subprocesses).
+- **Alternative:** in LM Studio, **Program → MCP → searxng-deepdive →
+  toggle off → save → toggle on**.
+
+If you keep seeing a pre-fix error message after a code change, the host
+client is running the cached process, not your latest code.
+
 ### From an MCP client
 
 Once published to npm:
