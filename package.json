@@ -1,0 +1,49 @@
+{
+  "name": "searxng-deepdive",
+  "version": "0.1.0",
+  "description": "MCP server for SearXNG with engine/category targeting, multi-page fanout, and dynamically-generated tool descriptions tailored to the instance's actual enabled engine pool.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "searxng-deepdive": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "probe": "tsx scripts/probe.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "searxng",
+    "search",
+    "metasearch",
+    "llm",
+    "agent",
+    "tools"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "undici": "^6.20.0",
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "^3.23.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
