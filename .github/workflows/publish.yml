@@ -42,15 +42,15 @@ jobs:
       contents: read
       id-token: write   # required for the OIDC token Trusted Publishing consumes
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "22"
           registry-url: "https://registry.npmjs.org"
           cache: npm
 
-      # npm CLI bundled with Node 20 is 10.x; Trusted Publishing needs >=11.5.1
+      # npm CLI bundled with Node 22 is 10.x; Trusted Publishing needs >=11.5.1
       # for the OIDC token exchange. Upgrading globally is the simplest way to
       # make sure `npm publish` reaches the version gate regardless of which
       # Node minor the runner has cached.

@@ -6,6 +6,21 @@ versioning is [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **Minimum supported Node.js is now 22.** Node 20 reached end-of-life
+  (April 2026) and has been dropped from the `engines` range and the CI
+  matrix. This is a breaking change for anyone still on Node 20.
+- Bumped `undici` 7.25.0 → 8.7.0 (major). undici 8 requires Node >= 22,
+  which the Node-20 drop above enables. The redirect-interceptor API
+  (`getGlobalDispatcher().compose(interceptors.redirect(...))`) that
+  `web_url_read` relies on is unchanged; the full test suite passes on
+  Node 22 and 24.
+- Bumped `zod` 4.4.2 → 4.4.3 (patch).
+- CI: `actions/checkout` 6 → 7; the publish job now runs on Node 22.
+- Dev tooling: TypeScript 5.6 → 6.0, `@types/node` 22 → 25, plus `tsx`
+  and `vitest` within-range updates. Build and all 113 tests pass under
+  TypeScript 6.0.
+
 ## [0.3.3] — 2026-05-03
 
 ### Added

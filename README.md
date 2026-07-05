@@ -52,6 +52,8 @@ Install via `npx -y` from any MCP client:
 The companion repo [SearXNG-Compose](https://github.com/burakaydinofficial/SearXNG-Compose)
 ships a plug-and-play Docker stack tuned for LLM consumption.
 
+**Requirements:** Node.js 22 or newer.
+
 ## Tools
 
 The server registers four tools. The LLM picks among them based on the
