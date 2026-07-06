@@ -6,6 +6,8 @@ versioning is [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-06
+
 ### Added
 - **Optional private-address blocking for `web_url_read`, off by default.**
   Reaching intranet / IP / metadata endpoints is a documented feature of
