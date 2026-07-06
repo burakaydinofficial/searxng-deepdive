@@ -254,9 +254,18 @@ async function doSearch(
     format?: "full" | "compact";
   },
 ): Promise<unknown> {
-  if (input.engines?.length) validateEngineSelection(input.engines, config);
-  if (input.categories?.length)
-    validateCategorySelection(input.categories, config);
+  // Validate against the freshest config, but only when there is something to
+  // validate — a broad search needs no engine/category list, so it never pays
+  // for a config fetch. If SearXNG was unreachable at startup the passed
+  // `config` is empty; the lazy (cached) re-fetch lets engine/category-targeted
+  // searches recover once SearXNG is up, without restarting the server.
+  if (input.engines?.length || input.categories?.length) {
+    const liveConfig = (await client.getConfigOrNull()) ?? config;
+    if (input.engines?.length)
+      validateEngineSelection(input.engines, liveConfig);
+    if (input.categories?.length)
+      validateCategorySelection(input.categories, liveConfig);
+  }
 
   // Normalize for the actual SearXNG call. SearXNG is case-sensitive on
   // engine/category names; passing wrong case there silently no-ops.

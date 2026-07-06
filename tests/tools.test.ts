@@ -78,6 +78,39 @@ describe("dispatchToolCall", () => {
     const r = await dispatchToolCall(tools(), "search", { query: "x" });
     expect(JSON.parse(r.content[0]!.text).result_count).toBe(1);
   });
+
+  it("recovers targeted-search validation via lazy config when startup config was empty", async () => {
+    // Simulate a degraded startup: server booted with an empty config because
+    // SearXNG was down. SearXNG is up now, so doSearch's lazy getConfigOrNull
+    // fetches the live engine list and the targeted search validates + runs.
+    const emptyConfig: SearxngConfig = {
+      enabledEngines: [],
+      enabledCategories: [],
+      enginesByCategory: {},
+    };
+    const client = new SearxngClient(ORIGIN);
+    const tls = buildTools(client, emptyConfig);
+    agent
+      .get(ORIGIN)
+      .intercept({ path: "/config" })
+      .reply(200, {
+        engines: [{ name: "google", categories: ["general"], enabled: true }],
+      });
+    agent
+      .get(ORIGIN)
+      .intercept({ path: (p) => p.startsWith("/search") })
+      .reply(200, {
+        query: "x",
+        number_of_results: 1,
+        results: [{ url: "u", title: "t", content: "c", engine: "google" }],
+        unresponsive_engines: [],
+      });
+    const r = await dispatchToolCall(tls, "search_on_engines", {
+      query: "x",
+      engines: ["google"],
+    });
+    expect(JSON.parse(r.content[0]!.text).result_count).toBe(1);
+  });
 });
 
 describe("Semaphore", () => {

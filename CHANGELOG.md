@@ -6,6 +6,16 @@ versioning is [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- The server now **starts even when SearXNG is unreachable** at launch —
+  it completes the MCP handshake and lists its tools (with generic
+  descriptions) instead of exiting 1. This unblocks smoke tests, `npx`
+  trials, and MCP clients that start before SearXNG is up. Engine/category-
+  targeted searches recover automatically via a lazy `/config` re-fetch
+  once SearXNG becomes reachable — no restart needed; calls made while it
+  is still down fail with a clear error rather than the whole server
+  refusing to boot.
+
 ## [0.4.0] — 2026-07-06
 
 ### Added

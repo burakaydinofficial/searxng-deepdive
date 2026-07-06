@@ -134,6 +134,7 @@ export interface SearxngConfig {
 
 export class SearxngClient {
   private readonly baseUrl: string;
+  private cachedConfig: SearxngConfig | null = null;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
@@ -191,11 +192,26 @@ export class SearxngClient {
       enginesByCategory[cat]!.sort();
     }
 
-    return {
+    const result: SearxngConfig = {
       enabledEngines,
       enabledCategories: [...categorySet].sort(),
       enginesByCategory,
     };
+    this.cachedConfig = result;
+    return result;
+  }
+
+  // Return the cached config if we have one, otherwise try to fetch it (caching
+  // on success). Returns null when SearXNG is (still) unreachable. Used by the
+  // search path so engine/category-targeted searches recover once SearXNG comes
+  // up, even if it was down at startup — no restart needed.
+  async getConfigOrNull(): Promise<SearxngConfig | null> {
+    if (this.cachedConfig) return this.cachedConfig;
+    try {
+      return await this.getConfig();
+    } catch {
+      return null;
+    }
   }
 
   async search(params: SearchParams): Promise<SearchResponse> {

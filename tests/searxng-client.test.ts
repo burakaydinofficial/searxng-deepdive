@@ -195,6 +195,29 @@ describe("SearxngClient.getConfig", () => {
   });
 });
 
+describe("SearxngClient.getConfigOrNull", () => {
+  it("returns the cached config without re-fetching", async () => {
+    pool()
+      .intercept({ path: "/config" })
+      .reply(200, {
+        engines: [{ name: "google", categories: ["general"], enabled: true }],
+      });
+    const client = new SearxngClient(ORIGIN);
+    const first = await client.getConfig(); // caches
+    // Second call must use the cache — only one intercept exists, so a second
+    // HTTP request would throw.
+    const second = await client.getConfigOrNull();
+    expect(second).toEqual(first);
+    expect(second!.enabledEngines).toEqual(["google"]);
+  });
+
+  it("returns null when SearXNG is unreachable (no cached config)", async () => {
+    // No intercept set up + disableNetConnect → the /config request fails.
+    const cfg = await new SearxngClient(ORIGIN).getConfigOrNull();
+    expect(cfg).toBeNull();
+  });
+});
+
 describe("SearxngClient.search", () => {
   const minimalResp = (overrides: Record<string, unknown> = {}) => ({
     query: "x",

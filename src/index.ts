@@ -36,19 +36,27 @@ async function main(): Promise<void> {
 
   const client = new SearxngClient(SEARXNG_URL);
 
-  // Probe early so we fail loudly if SearXNG isn't reachable, instead of
-  // registering tools that will all 500 on first call. The fetched config
-  // is then handed to registerTools so we don't pay for a second /config
-  // round-trip during MCP setup.
+  // Introspect /config so tool descriptions reflect this instance's live engine
+  // pool, and hand it to registerTools so MCP setup doesn't pay for a second
+  // round-trip. But do NOT refuse to boot if SearXNG is unreachable: the server
+  // must still complete the MCP handshake and list its tools — for smoke tests,
+  // `npx` trials, and clients that start before SearXNG is up. In that case we
+  // register with generic descriptions and surface the failure on the actual
+  // tool call (which throws a clear error the model can act on); the search
+  // path re-fetches /config lazily, so targeted searches recover once SearXNG
+  // comes up, without a restart.
   let cfg: SearxngConfig;
+  let degraded = false;
   try {
     cfg = await client.getConfig();
   } catch (e) {
+    degraded = true;
+    cfg = { enabledEngines: [], enabledCategories: [], enginesByCategory: {} };
     logStderr(
-      `Failed to reach SearXNG at ${SEARXNG_URL}. Set SEARXNG_URL to your instance.`,
+      `SearXNG not reachable at ${SEARXNG_URL} at startup (${e instanceof Error ? e.message : String(e)}). ` +
+        `Starting in degraded mode: tools list with generic descriptions and calls retry SearXNG. ` +
+        `Set SEARXNG_URL to your instance; restart once it is reachable for the live engine list.`,
     );
-    logStderr(`Original error: ${e instanceof Error ? e.message : String(e)}`);
-    process.exit(1);
   }
 
   const server = new Server(
@@ -62,7 +70,9 @@ async function main(): Promise<void> {
   await server.connect(transport);
 
   logStderr(
-    `Connected to ${SEARXNG_URL} (${cfg.enabledEngines.length} engines enabled). MCP stdio server ready.`,
+    degraded
+      ? `MCP stdio server ready (DEGRADED — SearXNG at ${SEARXNG_URL} was unreachable at startup).`
+      : `Connected to ${SEARXNG_URL} (${cfg.enabledEngines.length} engines enabled). MCP stdio server ready.`,
   );
 }
 
