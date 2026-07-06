@@ -159,3 +159,26 @@ describe("schema describe() strings — anti-pattern checks", () => {
     expect(allDescriptions).toMatch(/instance['']s configured default/i);
   });
 });
+
+describe("degraded descriptions (empty config — SearXNG unreachable at startup)", () => {
+  const empty: SearxngConfig = {
+    enabledEngines: [],
+    enabledCategories: [],
+    enginesByCategory: {},
+  };
+
+  it("does not print '0 engines' or empty/duplicate example lists", () => {
+    const s = searchDescription(empty);
+    const soe = searchOnEnginesDescription(empty);
+    const sbc = searchByCategoryDescription(empty);
+    expect(s).not.toMatch(/0 enabled engines/);
+    expect(soe).not.toMatch(/engines: \[\]/);
+    expect(soe).not.toMatch(/\(0 total\)/);
+    expect(sbc).not.toMatch(/\["general", "general"\]/);
+  });
+
+  it("explains the live list is unavailable rather than showing an empty one", () => {
+    expect(searchOnEnginesDescription(empty)).toMatch(/unavailable|unreachable/i);
+    expect(searchByCategoryDescription(empty)).toMatch(/unavailable|unreachable/i);
+  });
+});

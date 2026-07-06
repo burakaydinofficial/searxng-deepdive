@@ -4,11 +4,26 @@
 
 import type { SearxngConfig } from "./searxng.js";
 
+// When the server starts and SearXNG is unreachable, it registers tools with an
+// empty config (degraded mode) rather than refusing to boot. A live SearXNG
+// instance always has engines enabled, so an empty engine pool means the live
+// list is unavailable — descriptions must say so plainly instead of printing
+// "0 engines" or empty/duplicate examples.
+const DEGRADED_NOTE =
+  "NOTE: this instance's live engine/category list is currently unavailable — " +
+  "SearXNG was unreachable when the server started. Names you pass are forwarded " +
+  "and validated once SearXNG is reachable; restart the server after SearXNG is " +
+  "up to see the enabled list here.";
+
 export function searchDescription(cfg: SearxngConfig): string {
+  const pool =
+    cfg.enabledEngines.length > 0
+      ? `the ${cfg.enabledEngines.length} enabled engines on this instance`
+      : `this instance's enabled engines`;
   return [
     "Broad web search across the SearXNG instance's full enabled engine pool.",
     "",
-    `Use this for general-purpose queries when you don't have a specific source preference. Returns a merged, deduplicated result list from across the ${cfg.enabledEngines.length} enabled engines on this instance — actual yield depends on which engines respond at query time.`,
+    `Use this for general-purpose queries when you don't have a specific source preference. Returns a merged, deduplicated result list from across ${pool} — actual yield depends on which engines respond at query time.`,
     "",
     "Knobs:",
     "  • pages=N (max 5) — fetch multiple pages and merge for more results in one call.",
@@ -22,6 +37,17 @@ export function searchDescription(cfg: SearxngConfig): string {
 }
 
 export function searchOnEnginesDescription(cfg: SearxngConfig): string {
+  if (cfg.enabledEngines.length === 0) {
+    return [
+      'Search using ONLY the specified engines (e.g. engines: ["arxiv", "duckduckgo"]).',
+      "",
+      "Use when you have a specific source preference instead of the broad `search` tool.",
+      "",
+      DEGRADED_NOTE,
+      "",
+      "Multi-page fanout (pages=N) and other knobs work the same as the broad `search` tool.",
+    ].join("\n");
+  }
   // Pick a science-shaped example if we have one, otherwise fall back to
   // whatever's available, so the example is never misleading.
   const has = (n: string) => cfg.enabledEngines.includes(n);
@@ -64,6 +90,17 @@ export function searchOnEnginesDescription(cfg: SearxngConfig): string {
 }
 
 export function searchByCategoryDescription(cfg: SearxngConfig): string {
+  if (cfg.enabledCategories.length === 0) {
+    return [
+      'Search within one or more categories — runs every engine tagged with each (e.g. categories: ["science"]).',
+      "",
+      "Use when you want broad coverage of a content type without enumerating engines.",
+      "",
+      DEGRADED_NOTE,
+      "",
+      "Multi-page fanout (pages=N) and other knobs work the same as the broad `search` tool.",
+    ].join("\n");
+  }
   // Show category names on their own first (the actionable list), then
   // show what engines belong to each (reference only). The earlier flat
   // "category (N): engine1, engine2, ..." format caused agents to confuse
