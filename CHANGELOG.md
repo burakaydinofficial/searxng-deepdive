@@ -6,6 +6,8 @@ versioning is [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-07-06
+
 ### Fixed
 - The server now **starts even when SearXNG is unreachable** at launch —
   it completes the MCP handshake and lists its tools (with generic
@@ -15,6 +17,9 @@ versioning is [Semantic Versioning](https://semver.org/).
   once SearXNG becomes reachable — no restart needed; calls made while it
   is still down fail with a clear error rather than the whole server
   refusing to boot.
+- Degraded-mode tool descriptions read cleanly — they state that the live
+  engine/category list is unavailable (SearXNG was unreachable at startup)
+  instead of printing "0 engines", empty lists, or duplicate examples.
 
 ## [0.4.0] — 2026-07-06
 
