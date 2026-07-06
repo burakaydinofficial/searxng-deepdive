@@ -6,20 +6,51 @@ versioning is [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Optional private-address blocking for `web_url_read`, off by default.**
+  Reaching intranet / IP / metadata endpoints is a documented feature of
+  this local research tool (see README "Security notes"), so it stays the
+  default. Operators running in a less-trusted topology can set
+  `SEARXNG_DEEPDIVE_BLOCK_PRIVATE=1` to refuse private / loopback /
+  link-local / metadata destinations — enforced on every redirect hop and
+  against the actual dialed IP, so DNS rebinding can't slip past — and allow
+  specific internal hosts back in via `SEARXNG_DEEPDIVE_ALLOWED_HOSTS`.
+
 ### Changed
+- `web_url_read` now enforces a 45-second total-request deadline spanning
+  all redirect hops (previously only a per-chunk body timeout), caps the
+  Markdown it returns in one call (~100k characters, with a paginate hint),
+  and bounds concurrent tool handlers (max 4).
+- `/config` and `/search` response bodies are size-capped (reusing the
+  existing `web_url_read` 10 MB stream cap) so a runaway instance response
+  can't exhaust memory.
+- `/config` engine/category names are stripped of control / C1 / bidi /
+  zero-width characters and length-capped before they reach agent-facing
+  descriptions or error strings (defense-in-depth against a malformed name
+  forging description structure).
 - **Minimum supported Node.js is now 22.** Node 20 reached end-of-life
   (April 2026) and has been dropped from the `engines` range and the CI
   matrix. This is a breaking change for anyone still on Node 20.
-- Bumped `undici` 7.25.0 → 8.7.0 (major). undici 8 requires Node >= 22,
-  which the Node-20 drop above enables. The redirect-interceptor API
-  (`getGlobalDispatcher().compose(interceptors.redirect(...))`) that
-  `web_url_read` relies on is unchanged; the full test suite passes on
-  Node 22 and 24.
-- Bumped `zod` 4.4.2 → 4.4.3 (patch).
+- Bumped `undici` 7.25.0 → 8.7.0 (major, requires Node >= 22) and `zod`
+  4.4.2 → 4.4.3.
 - CI: `actions/checkout` 6 → 7; the publish job now runs on Node 22.
 - Dev tooling: TypeScript 5.6 → 6.0, `@types/node` 22 → 25, plus `tsx`
-  and `vitest` within-range updates. Build and all 113 tests pass under
-  TypeScript 6.0.
+  and `vitest` within-range updates.
+
+### Fixed
+- Heading and section extraction ignore `#` lines inside fenced code
+  blocks — no more phantom TOC entries or a code sample truncating a
+  section.
+- Zero-result hints count distinct engines, so one engine failing with two
+  different reasons across pages no longer claims "all N engines were
+  unresponsive".
+- Accurate hints for a `paragraphRange` of `0` (it is 1-indexed), a
+  reversed `paragraphRange`, and paging past the end of a document — all
+  previously misreported as "fewer paragraphs" or a silent empty result.
+- Multi-page dedup normalizes trailing-slash and fragment URL variants so
+  they no longer inflate `result_count`.
+- `file://` and other non-HTTP(S) schemes remain rejected by `web_url_read`
+  (the tool never reads local files); this is now covered by tests.
 
 ## [0.3.3] — 2026-05-03
 

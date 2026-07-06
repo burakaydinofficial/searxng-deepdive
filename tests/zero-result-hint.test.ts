@@ -106,4 +106,21 @@ describe("buildZeroResultHint", () => {
     expect(hint).toMatch(/time_range/);
     expect(hint).toMatch(/All 1 requested engine/);
   });
+
+  it("counts DISTINCT engines, not raw entries, before claiming all failed", () => {
+    // One engine failing with two different reasons across pages must NOT be
+    // reported as "all 2 requested engines unresponsive" when the other engine
+    // simply matched nothing.
+    const resp = empty({
+      unresponsive_engines: [
+        ["google", "timeout"],
+        ["google", "too many requests"],
+      ],
+    });
+    const ctx: ZeroResultContext = { engines: ["google", "bing"] };
+    // Must not falsely claim all engines failed (it returns no such hint here).
+    expect(buildZeroResultHint(resp, ctx) ?? "").not.toMatch(
+      /All 2 requested engine/,
+    );
+  });
 });

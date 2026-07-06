@@ -167,9 +167,19 @@ export function buildZeroResultHint(
     );
   }
 
-  const unresponsiveCount = Array.isArray(resp.unresponsive_engines)
-    ? resp.unresponsive_engines.length
-    : 0;
+  // Count DISTINCT engines, not raw entries: SearXNG reports failures as
+  // [engine, reason] tuples, and the same engine can fail with different
+  // reasons across pages (timeout, then "too many requests"), producing
+  // multiple entries for one engine. Counting entries would falsely claim
+  // "all N requested engines were unresponsive" when only one actually failed.
+  const unresponsiveList = Array.isArray(resp.unresponsive_engines)
+    ? resp.unresponsive_engines
+    : [];
+  const unresponsiveCount = new Set(
+    unresponsiveList.map((u) =>
+      Array.isArray(u) ? String((u as unknown[])[0]) : JSON.stringify(u),
+    ),
+  ).size;
 
   if (
     unresponsiveCount > 0 &&
@@ -297,18 +307,40 @@ async function doSearch(
   return trimToCompact(resp, 1, ctx);
 }
 
-export async function registerTools(
-  server: Server,
+// Bounds how many tool handlers run concurrently so parallel web_url_read
+// calls can't multiply the per-fetch buffer toward heap exhaustion. Excess
+// calls queue and run as slots free up.
+export class Semaphore {
+  private active = 0;
+  private readonly waiters: (() => void)[] = [];
+  constructor(private readonly max: number) {}
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.active >= this.max) {
+      await new Promise<void>((resolve) => this.waiters.push(resolve));
+    }
+    this.active++;
+    try {
+      return await fn();
+    } finally {
+      this.active--;
+      this.waiters.shift()?.();
+    }
+  }
+}
+
+const MAX_CONCURRENT_TOOL_CALLS = 4;
+
+export interface ToolCallResult {
+  content: { type: "text"; text: string }[];
+}
+
+// Build the four tool definitions. Exported so the dispatch layer can be
+// unit-tested without spinning up an MCP transport.
+export function buildTools(
   client: SearxngClient,
   config: SearxngConfig,
-): Promise<void> {
-  // Config is passed in (rather than fetched here) so the entrypoint can
-  // probe SearXNG once for both the startup log and the dynamic tool
-  // descriptions — a second /config round-trip during MCP setup would
-  // also create a tiny window where the descriptions could disagree with
-  // the engine count we just printed.
-
-  const tools: ToolDef<unknown>[] = [
+): ToolDef<unknown>[] {
+  return [
     {
       name: "search",
       description: searchDescription(config),
@@ -347,6 +379,59 @@ export async function registerTools(
       ),
     },
   ];
+}
+
+// Dispatch one tool call. ALL failures throw real errors: unknown-tool and
+// schema-invalid arguments are protocol faults, and tool-execution failures
+// (an invalid engine/category name with its corrective hint, an unreachable
+// URL, SearXNG rate-limited or down) throw too. This project deliberately
+// surfaces failures through the MCP JSON-RPC error envelope (-32603), not as
+// { isError: true } results, because that envelope is what the target clients
+// feed the model, so the hints reach it. See AGENTS.md (Anti-patterns).
+export async function dispatchToolCall(
+  tools: ToolDef<unknown>[],
+  name: string,
+  args: unknown,
+  sem?: Semaphore,
+): Promise<ToolCallResult> {
+  const tool = tools.find((t) => t.name === name);
+  if (!tool) {
+    throw new Error(`Unknown tool: ${name}`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = tool.zodSchema.parse(args ?? {});
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      // zod 4 renamed ZodError.errors → .issues; same shape per item.
+      throw new Error(
+        `Invalid arguments for ${tool.name}: ${e.issues
+          .map((er) => `${er.path.join(".")} ${er.message}`)
+          .join("; ")}`,
+      );
+    }
+    throw e;
+  }
+  const exec = async (): Promise<ToolCallResult> => {
+    const result = await tool.handler(parsed);
+    return { content: [{ type: "text", text: JSON.stringify(result) }] };
+  };
+  // Handler errors propagate (through the Semaphore) and become a JSON-RPC
+  // error response — the -32603 envelope the target clients feed the model.
+  return sem ? sem.run(exec) : exec();
+}
+
+export async function registerTools(
+  server: Server,
+  client: SearxngClient,
+  config: SearxngConfig,
+): Promise<void> {
+  // Config is passed in (rather than fetched here) so the entrypoint can probe
+  // SearXNG once for both the startup log and the dynamic tool descriptions — a
+  // second /config round-trip during MCP setup would also create a tiny window
+  // where the descriptions could disagree with the engine count we printed.
+  const tools = buildTools(client, config);
+  const sem = new Semaphore(MAX_CONCURRENT_TOOL_CALLS);
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: tools.map((t) => ({
@@ -357,32 +442,12 @@ export async function registerTools(
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
-    const tool = tools.find((t) => t.name === req.params.name);
-    if (!tool) {
-      throw new Error(`Unknown tool: ${req.params.name}`);
-    }
-    let parsed: unknown;
-    try {
-      parsed = tool.zodSchema.parse(req.params.arguments ?? {});
-    } catch (e) {
-      if (e instanceof z.ZodError) {
-        // zod 4 renamed ZodError.errors → .issues; same shape per item.
-        throw new Error(
-          `Invalid arguments for ${tool.name}: ${e.issues
-            .map((er) => `${er.path.join(".")} ${er.message}`)
-            .join("; ")}`,
-        );
-      }
-      throw e;
-    }
-    const result = await tool.handler(parsed);
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(result),
-        },
-      ],
-    };
+    const r = await dispatchToolCall(
+      tools,
+      req.params.name,
+      req.params.arguments,
+      sem,
+    );
+    return { content: r.content };
   });
 }

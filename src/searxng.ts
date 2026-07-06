@@ -5,6 +5,12 @@
 //   - search() / searchMultiPage() hit /search?format=json with our params.
 
 import { request } from "undici";
+import { readTextWithCap } from "./stream-read.js";
+
+// Bound how much of a /config or /search response we buffer. A misconfigured
+// or malicious/compromised instance returning an enormous body would otherwise
+// balloon memory. Generous enough never to truncate a legitimate JSON response.
+const MAX_SEARXNG_BYTES = 25 * 1024 * 1024;
 
 // Trim a response body for inclusion in an error message. Caps at ~200
 // chars and squashes whitespace runs so an HTML 502 page doesn't dump
@@ -12,6 +18,64 @@ import { request } from "undici";
 function snippetOf(text: string, max = 200): string {
   const compact = text.replace(/\s+/g, " ").trim();
   return compact.length > max ? `${compact.slice(0, max)}…` : compact;
+}
+
+// Names in the /config response are interpolated verbatim into agent-facing
+// tool descriptions and error messages. A malicious, compromised, or MITM'd
+// SearXNG instance (the default transport is plaintext http://) could embed
+// newlines/control chars to forge an authoritative "system" directive inside a
+// description, or an absurdly long string to bloat it. Sanitize at this
+// boundary so both descriptions and error strings are covered. Legitimate
+// engine/category names are short and control-char-free, so this is a no-op
+// for them.
+const MAX_CONFIG_NAME_LEN = 64;
+
+// Code points to neutralize in /config-derived names: C0 controls, DEL, C1
+// controls, and bidi/zero-width format chars — all can forge visual structure
+// (newline-forged "directives") or hide/reorder content in an agent-facing
+// description. Checked by code point so no such byte appears in this source.
+function isStrippableCodePoint(cp: number): boolean {
+  return (
+    cp < 0x20 || // C0 controls (incl. newline/tab)
+    cp === 0x7f || // DEL
+    (cp >= 0x80 && cp <= 0x9f) || // C1 controls
+    cp === 0x061c || // Arabic letter mark
+    (cp >= 0x200b && cp <= 0x200f) || // zero-width + LRM/RLM
+    (cp >= 0x202a && cp <= 0x202e) || // bidi embeddings/overrides
+    (cp >= 0x2066 && cp <= 0x2069) || // bidi isolates
+    cp === 0xfeff // BOM / zero-width no-break space
+  );
+}
+
+function sanitizeConfigName(name: unknown): string | null {
+  if (typeof name !== "string") return null;
+  const cleaned = Array.from(name, (ch) =>
+    isStrippableCodePoint(ch.codePointAt(0)!) ? " " : ch,
+  )
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return null;
+  return cleaned.length > MAX_CONFIG_NAME_LEN
+    ? cleaned.slice(0, MAX_CONFIG_NAME_LEN) + "…"
+    : cleaned;
+}
+
+// Normalize a result URL for cross-page dedup: drop the fragment and a single
+// trailing slash (scheme/host are lowercased by URL). The query string is
+// kept, since it frequently distinguishes genuinely different resources. Falls
+// back to the raw string for anything that isn't a parseable absolute URL.
+function dedupKey(raw: string): string {
+  try {
+    const u = new URL(raw);
+    u.hash = "";
+    if (u.pathname.length > 1 && u.pathname.endsWith("/")) {
+      u.pathname = u.pathname.slice(0, -1);
+    }
+    return u.href;
+  } catch {
+    return raw;
+  }
 }
 
 export type TimeRange = "day" | "week" | "month" | "year";
@@ -84,8 +148,13 @@ export class SearxngClient {
     // Read as text first so we can fall back gracefully if SearXNG returns
     // HTML (e.g. Cloudflare 502 page) or some other non-JSON body. Without
     // this, JSON.parse throws a bare SyntaxError that gives the caller no
-    // useful diagnostic.
-    const text = await body.text();
+    // useful diagnostic. Capped so a runaway body can't exhaust memory.
+    const { text, truncated } = await readTextWithCap(body, MAX_SEARXNG_BYTES);
+    if (truncated) {
+      throw new Error(
+        `SearXNG /config response exceeded ${MAX_SEARXNG_BYTES} bytes; refusing to buffer it.`,
+      );
+    }
     if (statusCode >= 400) {
       throw new Error(
         `SearXNG /config returned HTTP ${statusCode}: ${snippetOf(text)}`,
@@ -106,10 +175,14 @@ export class SearxngClient {
 
     for (const engine of config.engines ?? []) {
       if (!engine.enabled) continue;
-      enabledEngines.push(engine.name);
-      for (const cat of engine.categories ?? []) {
+      const name = sanitizeConfigName(engine.name);
+      if (!name) continue;
+      enabledEngines.push(name);
+      for (const rawCat of engine.categories ?? []) {
+        const cat = sanitizeConfigName(rawCat);
+        if (!cat) continue;
         categorySet.add(cat);
-        (enginesByCategory[cat] ??= []).push(engine.name);
+        (enginesByCategory[cat] ??= []).push(name);
       }
     }
 
@@ -153,7 +226,12 @@ export class SearxngClient {
       bodyTimeout: 60_000,
     });
 
-    const text = await body.text();
+    const { text, truncated } = await readTextWithCap(body, MAX_SEARXNG_BYTES);
+    if (truncated) {
+      throw new Error(
+        `SearXNG /search response exceeded ${MAX_SEARXNG_BYTES} bytes; refusing to buffer it.`,
+      );
+    }
     if (statusCode >= 400) {
       const rateLimited =
         statusCode === 429
@@ -210,8 +288,9 @@ export class SearxngClient {
       successfulPages++;
       const resp = settled.value;
       for (const r of resp.results) {
-        if (seen.has(r.url)) continue;
-        seen.add(r.url);
+        const key = dedupKey(r.url);
+        if (seen.has(key)) continue;
+        seen.add(key);
         merged.push(r);
       }
       const upstream = Array.isArray(resp.unresponsive_engines)

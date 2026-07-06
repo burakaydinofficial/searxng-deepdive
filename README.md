@@ -226,9 +226,17 @@ Within that boundary, two surfaces are worth knowing about:
   or cloud-instance metadata endpoints (`169.254.169.254`, etc.). This
   is by design for a local research tool but means you should not run
   this MCP server in topologies where an untrusted party can pick the
-  URLs (e.g. a hosted MCP gateway facing the public internet).
-  Body size is capped at 10 MB and content-type is sniffed before
-  conversion, so a malformed upstream can't trivially OOM the process.
+  URLs (e.g. a hosted MCP gateway facing the public internet). If you do
+  want to lock it down, set `SEARXNG_DEEPDIVE_BLOCK_PRIVATE=1` to refuse
+  private / loopback / link-local / metadata destinations — enforced on
+  every redirect hop and against the actual dialed IP, so DNS rebinding
+  can't slip past — and allow specific internal hosts back in with
+  `SEARXNG_DEEPDIVE_ALLOWED_HOSTS`. Non-HTTP(S) schemes — including
+  `file://` — are always rejected, so the tool never reads local files.
+  Body size is capped at 10 MB, a single request has a 45 s total deadline,
+  and the returned Markdown is length-capped (paginate with
+  `startChar`/`maxLength`), so a malformed or oversized upstream can't
+  trivially exhaust memory or the caller's context window.
 
 - **The `search` tools forward the model's query verbatim to SearXNG.**
   SearXNG is the trust boundary for upstream engine traffic; this

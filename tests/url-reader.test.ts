@@ -12,6 +12,8 @@ import {
   extractSection,
   extractParagraphRange,
   readTextWithCap,
+  MAX_OUTPUT_CHARS,
+  MAX_BODY_BYTES,
 } from "../src/url-reader.js";
 
 const ORIGIN = "http://example.test";
@@ -62,6 +64,18 @@ describe("extractHeadings", () => {
   it("ignores lines that look like headings but aren't (no space after #)", () => {
     expect(extractHeadings("#NotAHeading\nplain text")).toBe("");
   });
+
+  it("ignores # lines inside fenced code blocks", () => {
+    const md = [
+      "# Real Title",
+      "```sh",
+      "# not a heading (shell comment)",
+      "echo hi",
+      "```",
+      "## Real Sub",
+    ].join("\n");
+    expect(extractHeadings(md)).toBe("- Real Title\n  - Real Sub");
+  });
 });
 
 describe("extractSection", () => {
@@ -110,6 +124,24 @@ describe("extractSection", () => {
     const out = extractSection(dup, "A");
     expect(out).toContain("first");
     expect(out).not.toContain("second");
+  });
+
+  it("does not treat a # inside a fenced code block as a section boundary", () => {
+    const md = [
+      "## Install",
+      "run this:",
+      "```bash",
+      "# comment that looks like a heading",
+      "apt install foo",
+      "```",
+      "done installing",
+      "## Usage",
+      "use it",
+    ].join("\n");
+    const out = extractSection(md, "Install");
+    expect(out).toContain("apt install foo");
+    expect(out).toContain("done installing");
+    expect(out).not.toContain("use it");
   });
 });
 
@@ -422,5 +454,176 @@ describe("fetchAndConvertToMarkdown", () => {
       });
     const r = await fetchAndConvertToMarkdown(`${ORIGIN}/r`);
     expect(r.markdown).toContain("final");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SSRF guard: web_url_read must not reach private/internal addresses, on the
+// initial request or via a redirect hop.
+// ---------------------------------------------------------------------------
+
+describe("fetchAndConvertToMarkdown reaches private hosts by default (blocking is opt-in)", () => {
+  it("fetches a loopback URL when SEARXNG_DEEPDIVE_BLOCK_PRIVATE is unset", async () => {
+    delete process.env.SEARXNG_DEEPDIVE_BLOCK_PRIVATE;
+    agent
+      .get("http://127.0.0.1:8123")
+      .intercept({ path: "/x" })
+      .reply(200, "<h1>internal reachable</h1>", {
+        headers: { "content-type": "text/html" },
+      });
+    const r = await fetchAndConvertToMarkdown("http://127.0.0.1:8123/x");
+    expect(r.markdown).toContain("internal reachable");
+  });
+});
+
+describe("fetchAndConvertToMarkdown SSRF guard (opt-in via SEARXNG_DEEPDIVE_BLOCK_PRIVATE)", () => {
+  beforeEach(() => {
+    process.env.SEARXNG_DEEPDIVE_BLOCK_PRIVATE = "1";
+  });
+  afterEach(() => {
+    delete process.env.SEARXNG_DEEPDIVE_BLOCK_PRIVATE;
+  });
+
+  it("blocks a direct loopback URL", async () => {
+    await expect(
+      fetchAndConvertToMarkdown("http://127.0.0.1:7979/config"),
+    ).rejects.toThrow(/private\/internal/);
+  });
+
+  it("blocks the cloud-metadata endpoint", async () => {
+    await expect(
+      fetchAndConvertToMarkdown("http://169.254.169.254/latest/meta-data/"),
+    ).rejects.toThrow(/private\/internal/);
+  });
+
+  it("blocks a hostname that resolves to loopback (localhost)", async () => {
+    await expect(
+      fetchAndConvertToMarkdown("http://localhost:7979/"),
+    ).rejects.toThrow(/private\/internal/);
+  });
+
+  it("blocks a redirect from a public-looking host to an internal address", async () => {
+    pool()
+      .intercept({ path: "/redir" })
+      .reply(302, "", { headers: { location: "http://127.0.0.1:8080/secrets" } });
+    await expect(
+      fetchAndConvertToMarkdown(`${ORIGIN}/redir`),
+    ).rejects.toThrow(/private\/internal/);
+  });
+
+  it("follows a redirect to another public path and returns the final body", async () => {
+    pool()
+      .intercept({ path: "/a" })
+      .reply(301, "", { headers: { location: `${ORIGIN}/b` } });
+    pool()
+      .intercept({ path: "/b" })
+      .reply(200, "<h1>arrived</h1>", {
+        headers: { "content-type": "text/html" },
+      });
+    const r = await fetchAndConvertToMarkdown(`${ORIGIN}/a`);
+    expect(r.markdown).toContain("arrived");
+  });
+
+  it("blocks a redirect to a non-http(s) scheme", async () => {
+    pool()
+      .intercept({ path: "/js" })
+      .reply(302, "", { headers: { location: "file:///etc/passwd" } });
+    await expect(
+      fetchAndConvertToMarkdown(`${ORIGIN}/js`),
+    ).rejects.toThrow(/non-http/);
+  });
+
+  it("allows an internal host that is on the operator allowlist", async () => {
+    const prev = process.env.SEARXNG_DEEPDIVE_ALLOWED_HOSTS;
+    process.env.SEARXNG_DEEPDIVE_ALLOWED_HOSTS = "127.0.0.1";
+    try {
+      agent
+        .get("http://127.0.0.1:9999")
+        .intercept({ path: "/ok" })
+        .reply(200, "<h1>internal ok</h1>", {
+          headers: { "content-type": "text/html" },
+        });
+      const r = await fetchAndConvertToMarkdown("http://127.0.0.1:9999/ok");
+      expect(r.markdown).toContain("internal ok");
+    } finally {
+      if (prev === undefined) delete process.env.SEARXNG_DEEPDIVE_ALLOWED_HOSTS;
+      else process.env.SEARXNG_DEEPDIVE_ALLOWED_HOSTS = prev;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Output cap: full-mode reads of a very large page are truncated with a hint.
+// ---------------------------------------------------------------------------
+
+describe("fetchAndConvertToMarkdown output cap", () => {
+  it("truncates oversized full-mode output and hints to paginate", async () => {
+    const big = `<p>${"x".repeat(MAX_OUTPUT_CHARS + 50_000)}</p>`;
+    pool()
+      .intercept({ path: "/big" })
+      .reply(200, big, { headers: { "content-type": "text/html" } });
+
+    const r = await fetchAndConvertToMarkdown(`${ORIGIN}/big`);
+    expect(r.mode).toBe("full");
+    expect(r.truncated).toBe(true);
+    expect(r.markdown.length).toBe(MAX_OUTPUT_CHARS);
+    expect(r.total_length).toBeGreaterThan(MAX_OUTPUT_CHARS);
+    expect(r.hint).toMatch(/truncated|paginate/i);
+  });
+
+  it("throws when the response body exceeds MAX_BODY_BYTES", async () => {
+    const huge = "a".repeat(MAX_BODY_BYTES + 100);
+    pool()
+      .intercept({ path: "/huge" })
+      .reply(200, huge, { headers: { "content-type": "text/plain" } });
+    await expect(
+      fetchAndConvertToMarkdown(`${ORIGIN}/huge`),
+    ).rejects.toThrow(/exceeded|too large/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Extraction-mode hints: accurate diagnostics for reversed ranges and
+// paging past the end of the document.
+// ---------------------------------------------------------------------------
+
+describe("fetchAndConvertToMarkdown extraction hints", () => {
+  it("gives a reversed-range hint for paragraphRange N-M with M < N", async () => {
+    pool()
+      .intercept({ path: "/p" })
+      .reply(200, "<p>one</p><p>two</p><p>three</p>", {
+        headers: { "content-type": "text/html" },
+      });
+    const r = await fetchAndConvertToMarkdown(`${ORIGIN}/p`, {
+      paragraphRange: "5-3",
+    });
+    expect(r.markdown).toBe("");
+    expect(r.hint).toMatch(/reversed/);
+  });
+
+  it("hints when startChar is at or beyond the end of the document", async () => {
+    pool()
+      .intercept({ path: "/s" })
+      .reply(200, "<p>short</p>", { headers: { "content-type": "text/html" } });
+    const r = await fetchAndConvertToMarkdown(`${ORIGIN}/s`, {
+      startChar: 99999,
+      maxLength: 50,
+    });
+    expect(r.markdown).toBe("");
+    expect(r.truncated).toBe(false);
+    expect(r.hint).toMatch(/beyond|past/i);
+  });
+
+  it("hints that paragraphRange is 1-indexed for '0'", async () => {
+    pool()
+      .intercept({ path: "/z" })
+      .reply(200, "<p>a</p><p>b</p>", {
+        headers: { "content-type": "text/html" },
+      });
+    const r = await fetchAndConvertToMarkdown(`${ORIGIN}/z`, {
+      paragraphRange: "0",
+    });
+    expect(r.markdown).toBe("");
+    expect(r.hint).toMatch(/1-indexed/);
   });
 });
